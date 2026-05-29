@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sensor Trigger Extension – Documentation</title>
+    <style>
+        body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+        h1, h2 { color: #1e293b; }
+        code { background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; }
+        pre { background: #f8fafc; padding: 1rem; overflow-x: auto; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>Sensor Trigger Map Move Extension</h1>
+    <p><strong>Version:</strong> 1.0.0</p>
+    <p><strong>Author:</strong> PILOT Extensions AI</p>
+
+    <h2>Purpose</h2>
+    <p>This extension allows PILOT users to define trigger points on the map associated with specific sensor IDs. When a vehicle’s sensor (simulated for demo) triggers, the vehicle icon moves to the predefined point – useful for geofencing alerts, maintenance actions, or automated responses.</p>
+
+    <h2>Features</h2>
+    <ul>
+        <li>Displays real vehicles loaded from PILOT (<code>/ax/tree.php?vehs=1&state=1</code>).</li>
+        <li>Left navigation tab with vehicle grid (name, VIN, model, year).</li>
+        <li>Right floating panel with:
+            <ul>
+                <li>Toolbar: "Add Trigger Point" and "Simulate Trigger".</li>
+                <li>List of saved trigger points (edit/delete).</li>
+                <li>Event log showing trigger actions.</li>
+            </ul>
+        </li>
+        <li>Click on map to set coordinates when adding a trigger point.</li>
+        <li>Trigger points stored in <code>localStorage</code> (persistent across reloads).</li>
+        <li>Simulate trigger: pick a vehicle and a sensor ID → vehicle marker moves to the matching trigger point.</li>
+        <li>Demo sensors: each vehicle has mock sensors (<code>engine_temp</code>, <code>fuel_level</code>, <code>door_status</code>) for illustration.</li>
+    </ul>
+
+    <h2>How to Replace Simulation with Real Sensor Events</h2>
+    <p>The extension is designed for easy integration with real sensor APIs. In <code>Module.js</code>, locate the function <code>simulateTrigger(vehicleId, sensorId)</code>. Replace the call to this function with a real-time event listener (e.g., WebSocket, polling) that calls the same method:</p>
+    <pre><code>// Inside your real-time event handler:
+var extension = Ext.ClassManager.get('Store.sensortrigger.Module');
+if (extension && extension.moveVehicleOnSensor) {
+    extension.moveVehicleOnSensor(vehicleId, sensorId);
+}</code></pre>
+    <p>The method <code>moveVehicleOnSensor(vehicleId, sensorId)</code> checks for a stored trigger point with <code>sensorId</code> and moves the vehicle marker.</p>
+
+    <h2>Installation & Verification</h2>
+    <ol>
+        <li>Upload the <code>sensortrigger/</code> folder to a public HTTPS host (Cloudflare Pages, GitHub Pages, etc.).</li>
+        <li>Ensure <code>https://your-host.com/sensortrigger/Module.js</code> is accessible directly in a browser.</li>
+        <li>In PILOT admin, register the extension with name <code>sensortrigger</code> and base URL <code>https://your-host.com/sensortrigger/</code>.</li>
+        <li>Reload PILOT – a new tab "Sensor Triggers" appears in the left navigation and a control panel on the right side of the map.</li>
+    </ol>
+
+    <h2>Limitations / Notes</h2>
+    <ul>
+        <li>The extension uses the existing Online map (<code>window.mapContainer</code>). It does NOT create a new map.</li>
+        <li>Trigger points are stored per browser (localStorage).</li>
+        <li>Vehicle markers are moved by updating the Leaflet marker position – works with PILOT’s native markers.</li>
+        <li>If a marker does not exist for a vehicle, a new one is created at the target point.</li>
+        <li>All API calls to PILOT endpoints respect CORS through the built-in proxy (<code>/store/sensortrigger/...</code>).</li>
+    </ul>
+
+    <h2>Support</h2>
+    <p>For questions, refer to the <a href="https://raw.githubusercontent.com/pilot-telematics/pilot_extensions/main/AI_SPECS.md">AI_SPECS.md</a> or the example extensions in the official repository.</p>
+</body>
+</html>
