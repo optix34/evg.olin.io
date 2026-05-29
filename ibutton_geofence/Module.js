@@ -1,8 +1,8 @@
-Ext.define('Store.ibutton_geofence.Module', {
+Ext.define('Store.test_ble.Module', {
     extend: 'Ext.Component',
     singleton: true,
 
-    currentMarkerId: 'ibutton_geofence_marker',
+    currentMarkerId: 'test_ble_marker',
 
     initModule: function() {
         var me = this;
@@ -13,7 +13,7 @@ Ext.define('Store.ibutton_geofence.Module', {
         if (window.skeleton && window.skeleton.navigation) {
             window.skeleton.navigation.add(navTab);
         } else {
-            console.warn('ibutton_geofence: skeleton.navigation not found');
+            console.warn('test_ble: skeleton.navigation not found');
         }
 
         if (window.skeleton && window.skeleton.mapframe) {
@@ -24,7 +24,7 @@ Ext.define('Store.ibutton_geofence.Module', {
     },
 
     loadBindings: function() {
-        var stored = localStorage.getItem('ibutton_geofence_bindings');
+        var stored = localStorage.getItem('test_ble_bindings');
         if (stored) {
             try {
                 return Ext.decode(stored);
@@ -36,7 +36,7 @@ Ext.define('Store.ibutton_geofence.Module', {
     },
 
     saveBindings: function() {
-        localStorage.setItem('ibutton_geofence_bindings', Ext.encode(this.bindings));
+        localStorage.setItem('test_ble_bindings', Ext.encode(this.bindings));
     },
 
     getBindingByIbuttonId: function(ibuttonId) {
@@ -58,7 +58,6 @@ Ext.define('Store.ibutton_geofence.Module', {
         this.saveBindings();
     },
 
-    // ИСПРАВЛЕНО: вместо Ext.Array.removeIf используем filter
     deleteBinding: function(ibuttonId) {
         this.bindings = Ext.Array.filter(this.bindings, function(b) {
             return b.ibuttonId !== ibuttonId;
@@ -109,7 +108,7 @@ Ext.define('Store.ibutton_geofence.Module', {
             leafletMarker.options.id = markerOptions.id;
             leafletMarker.addTo(map.map);
         } else {
-            console.warn('ibutton_geofence: не удалось добавить маркер');
+            console.warn('test_ble: не удалось добавить маркер');
         }
     },
 
