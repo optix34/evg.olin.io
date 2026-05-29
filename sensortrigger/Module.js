@@ -1,6 +1,6 @@
 /**
- * Sensor Trigger Extension – "Позиция по меткам"
- * Автоматический демо-режим при отсутствии реальных ТС.
+ * Sensor Trigger Extension – версия с русским названием вкладки
+ * Отображает объекты клиента (ТС) и позволяет задавать точки перемещения по меткам.
  */
 
 Ext.define('Store.sensortrigger.Module', {
@@ -8,13 +8,17 @@ Ext.define('Store.sensortrigger.Module', {
 
     initModule: function() {
         var me = this;
+
         console.log('[sensortrigger] initModule started');
+
         if (!window.skeleton) {
             console.error('[sensortrigger] skeleton not found');
             return;
         }
+        console.log('[sensortrigger] skeleton OK');
+
         me.waitForMap(function() {
-            console.log('[sensortrigger] map ready');
+            console.log('[sensortrigger] map is ready');
             me.createNavigationTab();
             me.loadVehicles();
             me.loadTriggerPoints();
@@ -26,7 +30,7 @@ Ext.define('Store.sensortrigger.Module', {
 
     waitForMap: function(callback) {
         var check = function() {
-            var map = window.mapContainer || (window.getActiveTabMapContainer && window.getActiveTabMapContainer());
+            var map = window.mapContainer || window.getActiveTabMapContainer?.();
             if (map && map.map) {
                 callback();
             } else {
@@ -37,8 +41,10 @@ Ext.define('Store.sensortrigger.Module', {
         check();
     },
 
+    // ЛЕВАЯ ВКЛАДКА С НОВЫМ НАЗВАНИЕМ
     createNavigationTab: function() {
         var me = this;
+
         me.vehicleGrid = Ext.create('Ext.grid.Panel', {
             title: 'Транспорт',
             store: Ext.create('Ext.data.Store', {
@@ -59,17 +65,20 @@ Ext.define('Store.sensortrigger.Module', {
                 }
             }
         });
+
+        // ИЗМЕНЕНО: название вкладки на "Позиция по меткам"
         var navTab = Ext.create('Ext.panel.Panel', {
-            title: 'Позиция по меткам',
-            iconCls: 'fa fa-bluetooth-b',
+            title: 'Позиция по меткам',   // <-- новое название
+            iconCls: 'fa fa-microchip',
             layout: 'fit',
             items: [me.vehicleGrid]
         });
+
         if (skeleton.navigation) {
             skeleton.navigation.add(navTab);
             console.log('[sensortrigger] navigation tab added');
         } else {
-            console.error('[sensortrigger] skeleton.navigation missing');
+            console.error('[sensortrigger] skeleton.navigation not found');
         }
     },
 
@@ -80,100 +89,56 @@ Ext.define('Store.sensortrigger.Module', {
             url: '/ax/tree.php',
             params: { vehs: 1, state: 1 },
             success: function(response) {
-                console.log('[sensortrigger] /ax/tree.php response status:', response.status);
-                var rawData;
-                try {
-                    rawData = Ext.decode(response.responseText);
-                } catch(e) {
-                    console.error('[sensortrigger] JSON decode error', e);
-                    me.loadDemoVehicles();
-                    return;
+                var data = Ext.decode(response.responseText);
+                var vehicles = me.flattenVehicleTree(data);
+                console.log('[sensortrigger] loaded vehicles:', vehicles.length);
+
+                me.vehiclesStore = Ext.create('Ext.data.Store', {
+                    fields: ['vehid', 'name', 'vin', 'model', 'year'],
+                    data: vehicles
+                });
+                if (me.vehicleGrid) {
+                    me.vehicleGrid.reconfigure(me.vehiclesStore);
                 }
 
-                var vehicles = me.extractVehiclesFromTree(rawData);
-                console.log('[sensortrigger] extracted vehicles count:', vehicles.length);
+                me.mockSensors = {};
+                vehicles.forEach(function(v) {
+                    me.mockSensors[v.vehid] = [
+                        { sensor_id: 'engine_temp_' + v.vehid, name: 'Температура двигателя' },
+                        { sensor_id: 'fuel_level_' + v.vehid, name: 'Уровень топлива' },
+                        { sensor_id: 'door_status_' + v.vehid, name: 'Состояние двери' }
+                    ];
+                });
 
                 if (vehicles.length === 0) {
-                    console.log('[sensortrigger] No vehicles found, using demo mode');
-                    me.loadDemoVehicles();
-                } else {
-                    me.setVehiclesData(vehicles);
+                    Ext.Msg.alert('Информация', 'Нет объектов клиента в системе');
                 }
             },
-            failure: function(response) {
-                console.error('[sensortrigger] /ax/tree.php failed', response);
-                me.loadDemoVehicles();
+            failure: function() {
+                Ext.Msg.alert('Ошибка', 'Не удалось загрузить объекты клиента');
+                console.error('[sensortrigger] /ax/tree.php request failed');
             }
         });
     },
 
-    extractVehiclesFromTree: function(nodes, result) {
+    flattenVehicleTree: function(nodes, result) {
         result = result || [];
-        if (!nodes) return result;
-        if (!Ext.isArray(nodes)) nodes = [nodes];
-
+        if (!Ext.isArray(nodes)) return result;
         Ext.Array.each(nodes, function(node) {
-            // Определяем, является ли узел транспортным средством
-            var isVehicle = false;
-            var vehid = null;
             if (node.vehid && node.vehid > 0) {
-                vehid = node.vehid;
-                isVehicle = true;
-            } else if (node.object_id && node.object_id > 0 && (!node.children || node.children.length === 0)) {
-                vehid = node.object_id;
-                isVehicle = true;
-            } else if (node.orgid && node.orgid > 0 && (!node.children || node.children.length === 0) && node.iconCls !== 'folder_icon') {
-                vehid = node.orgid;
-                isVehicle = true;
-            }
-
-            if (isVehicle && vehid) {
                 result.push({
-                    vehid: vehid,
-                    name: node.name || 'ТС ' + vehid,
+                    vehid: node.vehid,
+                    name: node.name || 'N/A',
                     vin: node.vin || '',
                     model: node.model || '',
                     year: node.year || ''
                 });
             }
-            var children = node.children || node.items || node.nodes || [];
-            if (children.length) {
-                this.extractVehiclesFromTree(children, result);
+            if (node.children && node.children.length) {
+                this.flattenVehicleTree(node.children, result);
             }
         }, this);
         return result;
-    },
-
-    loadDemoVehicles: function() {
-        var me = this;
-        // Демо-данные для тестирования функционала
-        var demoVehicles = [
-            { vehid: 1001, name: 'Демо-ТС 1 (Маршрут А)', vin: 'XTA123456789', model: 'ГАЗель', year: '2020' },
-            { vehid: 1002, name: 'Демо-ТС 2 (Маршрут Б)', vin: 'XTA987654321', model: 'ЛАДА', year: '2021' },
-            { vehid: 1003, name: 'Демо-ТС 3 (Склад)', vin: 'XTA555555555', model: 'КамАЗ', year: '2019' }
-        ];
-        me.setVehiclesData(demoVehicles);
-        Ext.Msg.alert('Внимание', 'Реальные ТС не найдены. Загружены демо-данные для тестирования функционала.\n\nЧтобы видеть реальные ТС, убедитесь, что в системе есть транспортные средства, и при необходимости измените эндпоинт.');
-    },
-
-    setVehiclesData: function(vehicles) {
-        var me = this;
-        me.vehiclesStore = Ext.create('Ext.data.Store', {
-            fields: ['vehid', 'name', 'vin', 'model', 'year'],
-            data: vehicles
-        });
-        if (me.vehicleGrid) {
-            me.vehicleGrid.reconfigure(me.vehiclesStore);
-        }
-        // Генерация мок-датчиков для демо
-        me.mockSensors = {};
-        vehicles.forEach(function(v) {
-            me.mockSensors[v.vehid] = [
-                { sensor_id: 'engine_temp_' + v.vehid, name: 'Температура двигателя' },
-                { sensor_id: 'fuel_level_' + v.vehid, name: 'Уровень топлива' },
-                { sensor_id: 'door_status_' + v.vehid, name: 'Состояние двери' }
-            ];
-        });
     },
 
     loadTriggerPoints: function() {
@@ -209,7 +174,7 @@ Ext.define('Store.sensortrigger.Module', {
         me.triggerPointsStore.add(record);
         me.saveTriggerPoints();
         me.addTriggerPointMarker(record);
-        Ext.Msg.alert('Успех', 'Точка триггера добавлена');
+        Ext.Msg.alert('Успех', 'Точка добавлена');
     },
 
     deleteTriggerPoint: function(record) {
@@ -246,11 +211,11 @@ Ext.define('Store.sensortrigger.Module', {
         });
 
         var pointsGrid = Ext.create('Ext.grid.Panel', {
-            title: 'Точки триггеров',
+            title: 'Точки привязки',
             store: me.triggerPointsStore,
             columns: [
-                { text: 'Sensor ID', dataIndex: 'sensorId', flex: 2 },
-                { text: 'Метка', dataIndex: 'label', flex: 2 },
+                { text: 'Метка (ID)', dataIndex: 'sensorId', flex: 2 },
+                { text: 'Описание', dataIndex: 'label', flex: 2 },
                 { text: 'Координаты', flex: 1, renderer: function(v, m, rec) {
                     return rec.get('lat') + ', ' + rec.get('lon');
                 }}
@@ -281,12 +246,12 @@ Ext.define('Store.sensortrigger.Module', {
         });
 
         var logGrid = Ext.create('Ext.grid.Panel', {
-            title: 'Журнал срабатываний',
+            title: 'Журнал перемещений',
             store: me.logStore,
             columns: [
                 { text: 'Время', dataIndex: 'timestamp', width: 120 },
-                { text: 'ТС', dataIndex: 'vehicleName', flex: 2 },
-                { text: 'Sensor ID', dataIndex: 'sensorId', flex: 2 },
+                { text: 'Объект', dataIndex: 'vehicleName', flex: 2 },
+                { text: 'Метка', dataIndex: 'sensorId', flex: 2 },
                 { text: 'Точка', dataIndex: 'targetLabel', flex: 2 }
             ],
             height: 200
@@ -297,13 +262,13 @@ Ext.define('Store.sensortrigger.Module', {
             width: 350,
             shadow: true,
             layout: 'border',
-            title: 'Управление датчиками',
+            title: 'Управление позициями по меткам',   // изменено
             tools: [{ type: 'close', handler: function() { me.controlPanel.hide(); } }],
             items: [{
                 region: 'north',
                 xtype: 'toolbar',
                 items: [{
-                    text: 'Симуляция триггера',
+                    text: 'Симуляция срабатывания',
                     iconCls: 'fa fa-bolt',
                     handler: function() { me.showSimulateWindow(); }
                 }]
@@ -329,6 +294,8 @@ Ext.define('Store.sensortrigger.Module', {
         };
         if (Ext.on) Ext.on('resize', resizeHandler);
         else window.addEventListener('resize', resizeHandler);
+
+        console.log('[sensortrigger] control panel created');
     },
 
     addMapButton: function() {
@@ -340,7 +307,7 @@ Ext.define('Store.sensortrigger.Module', {
         }
 
         var btn = document.createElement('button');
-        btn.innerHTML = '➕ Добавить точку триггера';
+        btn.innerHTML = '➕ Добавить точку привязки';
         btn.style.position = 'absolute';
         btn.style.bottom = '20px';
         btn.style.right = '20px';
@@ -359,6 +326,9 @@ Ext.define('Store.sensortrigger.Module', {
         if (container && container.parentNode) {
             container.parentNode.style.position = 'relative';
             container.parentNode.appendChild(btn);
+            console.log('[sensortrigger] map button added');
+        } else {
+            console.error('[sensortrigger] cannot find map container');
         }
     },
 
@@ -392,19 +362,19 @@ Ext.define('Store.sensortrigger.Module', {
     showAddTriggerWindow: function() {
         var me = this;
         var win = Ext.create('Ext.window.Window', {
-            title: 'Новая точка триггера',
+            title: 'Новая точка привязки',
             width: 400,
             modal: true,
             layout: 'anchor',
             defaults: { anchor: '100%', margin: '5 10' },
             items: [{
                 xtype: 'textfield',
-                fieldLabel: 'Sensor ID',
+                fieldLabel: 'Метка (ID)',
                 itemId: 'sensorIdField',
                 allowBlank: false
             }, {
                 xtype: 'textfield',
-                fieldLabel: 'Метка (опционально)',
+                fieldLabel: 'Описание (необязательно)',
                 itemId: 'labelField'
             }, {
                 xtype: 'numberfield',
@@ -435,7 +405,7 @@ Ext.define('Store.sensortrigger.Module', {
                     var lon = win.down('#lonField').getValue();
                     var label = win.down('#labelField').getValue();
                     if (!sensorId || !lat || !lon) {
-                        Ext.Msg.alert('Ошибка', 'Заполните все поля');
+                        Ext.Msg.alert('Ошибка', 'Заполните метку и координаты');
                         return;
                     }
                     me.addTriggerPoint(sensorId, lat, lon, label);
@@ -453,12 +423,12 @@ Ext.define('Store.sensortrigger.Module', {
     showSimulateWindow: function() {
         var me = this;
         if (!me.vehiclesStore || me.vehiclesStore.getCount() === 0) {
-            Ext.Msg.alert('Ошибка', 'Список ТС ещё не загружен');
+            Ext.Msg.alert('Ошибка', 'Список объектов ещё не загружен');
             return;
         }
 
         var vehicleCombo = Ext.create('Ext.form.field.ComboBox', {
-            fieldLabel: 'Транспорт',
+            fieldLabel: 'Объект',
             store: me.vehiclesStore,
             displayField: 'name',
             valueField: 'vehid',
@@ -475,7 +445,7 @@ Ext.define('Store.sensortrigger.Module', {
         });
 
         var sensorCombo = Ext.create('Ext.form.field.ComboBox', {
-            fieldLabel: 'Sensor ID',
+            fieldLabel: 'Метка (ID)',
             store: Ext.create('Ext.data.Store', { fields: ['sensor_id', 'name'] }),
             displayField: 'name',
             valueField: 'sensor_id',
@@ -484,17 +454,17 @@ Ext.define('Store.sensortrigger.Module', {
         });
 
         var win = Ext.create('Ext.window.Window', {
-            title: 'Симуляция срабатывания',
+            title: 'Симуляция срабатывания метки',
             width: 400,
             modal: true,
             items: [vehicleCombo, sensorCombo],
             buttons: [{
-                text: 'Симулировать',
+                text: 'Переместить',
                 handler: function() {
                     var vehid = vehicleCombo.getValue();
                     var sensorId = sensorCombo.getValue();
                     if (!vehid || !sensorId) {
-                        Ext.Msg.alert('Ошибка', 'Выберите ТС и датчик');
+                        Ext.Msg.alert('Ошибка', 'Выберите объект и метку');
                         return;
                     }
                     win.close();
@@ -518,7 +488,7 @@ Ext.define('Store.sensortrigger.Module', {
             }
         });
         if (!triggerRecord) {
-            Ext.Msg.alert('Нет точки', 'Для датчика ' + sensorId + ' не задана точка');
+            Ext.Msg.alert('Нет точки', 'Для метки "' + sensorId + '" не задана точка привязки');
             return;
         }
 
@@ -533,9 +503,9 @@ Ext.define('Store.sensortrigger.Module', {
                 sensorId: sensorId,
                 targetLabel: triggerRecord.get('label') || sensorId
             });
-            Ext.Msg.alert('Триггер', 'ТС ' + vehicleName + ' перемещён');
+            Ext.Msg.alert('Перемещение', 'Объект "' + vehicleName + '" перемещён в точку "' + (triggerRecord.get('label') || sensorId) + '"');
         } else {
-            Ext.Msg.alert('Ошибка', 'Маркер ТС не найден');
+            Ext.Msg.alert('Ошибка', 'Не удалось найти маркер объекта на карте');
         }
     },
 
