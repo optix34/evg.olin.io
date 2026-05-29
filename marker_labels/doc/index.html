@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marker Labels Manager – Documentation</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background: #f3f4f6; color: #1f2937; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h1, h2 { color: #1e3a8a; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; }
+        code, pre { background: #e5e7eb; border-radius: 6px; font-family: monospace; }
+        code { padding: 2px 6px; font-size: 0.9em; }
+        pre { padding: 12px; overflow-x: auto; }
+        .note { background: #fef9c3; border-left: 4px solid #eab308; padding: 12px; margin: 20px 0; border-radius: 6px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📍 Marker Labels Manager – PILOT Extension</h1>
+    <p><strong>Version:</strong> 1.0<br>
+    <strong>Compatibility:</strong> PILOT with Ext JS 7.7+ and extension system.</p>
+
+    <h2>📌 Description</h2>
+    <p>This extension allows you to create custom markers (labels) and associate them with vehicles from your PILOT fleet. For each marker, the extension displays the last fix time of the linked tracker, helping you monitor vehicle positions.</p>
+
+    <h2>🚀 Features</h2>
+    <ul>
+        <li>Left navigation tab with "Add Marker" button.</li>
+        <li>Modal form to create a marker: unique ID, vehicle selection, description, latitude/longitude.</li>
+        <li>All markers stored in browser's <code>localStorage</code> (persist across sessions).</li>
+        <li>Main panel shows a sortable grid with marker details and last fix time.</li>
+        <li>Delete markers individually.</li>
+        <li>"Refresh Last Fix Times" button to reload vehicle data from PILOT.</li>
+        <li>Integration with PILOT's <code>/ax/tree.php</code> to obtain vehicle names and last fix timestamps.</li>
+    </ul>
+
+    <h2>⚙️ Installation</h2>
+    <ol>
+        <li>Upload the extension folder to a static web server (Cloudflare Pages, GitHub Pages, etc.).</li>
+        <li>In PILOT Admin, create a new extension with name <code>marker_labels</code> (exact snake_case).</li>
+        <li>Set the external base URL to the folder containing <code>Module.js</code>, e.g. <code>https://your-domain.com/marker_labels/</code>.</li>
+        <li>Save and reload PILOT. The "Marker Labels" tab will appear in the left navigation.</li>
+    </ol>
+
+    <div class="note">
+        <strong>ℹ️ Note:</strong> The extension assumes that the endpoint <code>/ax/tree.php?vehs=1&state=1</code> returns vehicles with a field <code>last_time</code> (Unix timestamp or string). If your PILOT version does not provide this field, the last fix time will show "Not available". You can manually refresh using the button in the main panel.
+    </div>
+
+    <h2>🧩 Usage</h2>
+    <ol>
+        <li>Click <strong>Add Marker</strong> in the left panel.</li>
+        <li>Enter a unique Marker ID, select a tracker from the dropdown, add an optional description, and enter latitude/longitude.</li>
+        <li>Click Save – the marker appears in the main grid.</li>
+        <li>To delete a marker, click the "Delete" link in the Actions column.</li>
+        <li>To refresh last fix times, click the "Refresh Last Fix Times" button in the bottom toolbar.</li>
+    </ol>
+
+    <h2>🐛 Troubleshooting</h2>
+    <ul>
+        <li><strong>Vehicle list is empty:</strong> Check that <code>/ax/tree.php</code> is accessible and returns valid JSON with <code>vehid</code> and <code>text</code>.</li>
+        <li><strong>Last fix time not showing:</strong> Ensure that the tree response contains <code>last_time</code> or <code>last_fix</code>. If not, the extension will display "Not available".</li>
+        <li><strong>Markers disappear after browser clear:</strong> Markers are stored in localStorage; clearing browser data will remove them. Consider exporting markers if needed (not implemented in this version).</li>
+        <li><strong>Navigation tab missing icon:</strong> Ensure your PILOT build includes Font Awesome 6. The class <code>fa fa-map-marker-alt</code> should be available.</li>
+    </ul>
+
+    <h2>📄 License</h2>
+    <p>Apache 2.0. See main PILOT Extensions repository.</p>
+    <hr>
+    <p><em>Documentation for Marker Labels Manager – PILOT Extension.</em></p>
+</div>
+</body>
+</html>
