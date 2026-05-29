@@ -1,6 +1,6 @@
 /**
- * Sensor Trigger Extension – версия с русским названием вкладки
- * Отображает объекты клиента (ТС) и позволяет задавать точки перемещения по меткам.
+ * Позиция по меткам – доработанная версия
+ * Выбор точки на карте по клику, затем открытие окна с подставленными координатами.
  */
 
 Ext.define('Store.sensortrigger.Module', {
@@ -8,7 +8,6 @@ Ext.define('Store.sensortrigger.Module', {
 
     initModule: function() {
         var me = this;
-
         console.log('[sensortrigger] initModule started');
 
         if (!window.skeleton) {
@@ -23,8 +22,8 @@ Ext.define('Store.sensortrigger.Module', {
             me.loadVehicles();
             me.loadTriggerPoints();
             me.createControlPanel();
-            me.addMapButton();
-            me.setupMapClickListener();
+            me.setupMapClickListener();   // слушатель кликов (для выбора точки)
+            me.addMapButton();            // кнопка в левом нижнем углу
         });
     },
 
@@ -41,7 +40,7 @@ Ext.define('Store.sensortrigger.Module', {
         check();
     },
 
-    // ЛЕВАЯ ВКЛАДКА С НОВЫМ НАЗВАНИЕМ
+    // -------------------- Левая вкладка --------------------
     createNavigationTab: function() {
         var me = this;
 
@@ -66,9 +65,8 @@ Ext.define('Store.sensortrigger.Module', {
             }
         });
 
-        // ИЗМЕНЕНО: название вкладки на "Позиция по меткам"
         var navTab = Ext.create('Ext.panel.Panel', {
-            title: 'Позиция по меткам',   // <-- новое название
+            title: 'Позиция по меткам',
             iconCls: 'fa fa-microchip',
             layout: 'fit',
             items: [me.vehicleGrid]
@@ -82,6 +80,7 @@ Ext.define('Store.sensortrigger.Module', {
         }
     },
 
+    // -------------------- Загрузка ТС --------------------
     loadVehicles: function() {
         var me = this;
 
@@ -141,6 +140,7 @@ Ext.define('Store.sensortrigger.Module', {
         return result;
     },
 
+    // -------------------- Точки привязки (localStorage) --------------------
     loadTriggerPoints: function() {
         var me = this;
         me.triggerPointsStore = Ext.create('Ext.data.Store', {
@@ -202,6 +202,7 @@ Ext.define('Store.sensortrigger.Module', {
         }
     },
 
+    // -------------------- Правая панель управления --------------------
     createControlPanel: function() {
         var me = this;
 
@@ -224,7 +225,10 @@ Ext.define('Store.sensortrigger.Module', {
             tbar: [{
                 text: 'Добавить',
                 iconCls: 'fa fa-plus',
-                handler: function() { me.showAddTriggerWindow(); }
+                handler: function() {
+                    // Новая логика: сразу активируем выбор на карте
+                    me.startPointSelection();
+                }
             }, {
                 text: 'Удалить',
                 iconCls: 'fa fa-trash',
@@ -262,7 +266,7 @@ Ext.define('Store.sensortrigger.Module', {
             width: 350,
             shadow: true,
             layout: 'border',
-            title: 'Управление позициями по меткам',   // изменено
+            title: 'Управление позициями по меткам',
             tools: [{ type: 'close', handler: function() { me.controlPanel.hide(); } }],
             items: [{
                 region: 'north',
@@ -298,6 +302,7 @@ Ext.define('Store.sensortrigger.Module', {
         console.log('[sensortrigger] control panel created');
     },
 
+    // -------------------- Кнопка на карте (нижний левый угол) --------------------
     addMapButton: function() {
         var me = this;
         var map = me.getMap();
@@ -310,7 +315,7 @@ Ext.define('Store.sensortrigger.Module', {
         btn.innerHTML = '➕ Добавить точку привязки';
         btn.style.position = 'absolute';
         btn.style.bottom = '20px';
-        btn.style.right = '20px';
+        btn.style.left = '20px';          // нижний левый угол
         btn.style.zIndex = '1000';
         btn.style.padding = '10px 15px';
         btn.style.backgroundColor = '#3b82f6';
@@ -320,21 +325,29 @@ Ext.define('Store.sensortrigger.Module', {
         btn.style.cursor = 'pointer';
         btn.style.fontWeight = 'bold';
         btn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
-        btn.onclick = function() { me.showAddTriggerWindow(); };
+        btn.onclick = function() {
+            me.startPointSelection();   // активировать выбор точки на карте
+        };
 
         var container = map.map._container || map.map.getContainer();
         if (container && container.parentNode) {
             container.parentNode.style.position = 'relative';
             container.parentNode.appendChild(btn);
-            console.log('[sensortrigger] map button added');
+            console.log('[sensortrigger] map button added (bottom-left)');
         } else {
             console.error('[sensortrigger] cannot find map container');
         }
     },
 
-    getMap: function() {
-        if (window.getActiveTabMapContainer) return getActiveTabMapContainer();
-        return window.mapContainer || null;
+    // -------------------- Выбор точки на карте --------------------
+    startPointSelection: function() {
+        var me = this;
+        if (me.waitingForMapClick) {
+            Ext.Msg.alert('Внимание', 'Уже ожидается выбор точки на карте');
+            return;
+        }
+        me.waitingForMapClick = true;
+        Ext.Msg.alert('Выбор точки', 'Кликните на карте в том месте, где хотите создать точку привязки');
     },
 
     setupMapClickListener: function() {
@@ -345,21 +358,19 @@ Ext.define('Store.sensortrigger.Module', {
             if (me.waitingForMapClick) {
                 var lat = e.latlng.lat;
                 var lng = e.latlng.lng;
-                if (me.pendingAddWindow) {
-                    var latField = me.pendingAddWindow.down('textfield[itemId=latField]');
-                    var lonField = me.pendingAddWindow.down('textfield[itemId=lonField]');
-                    if (latField && lonField) {
-                        latField.setValue(lat);
-                        lonField.setValue(lng);
-                    }
-                }
-                me.waitingForMapClick = false;
-                Ext.Msg.alert('Готово', 'Координаты добавлены');
+                me.waitingForMapClick = false;   // сбросить флаг
+                // Открыть окно с уже заполненными координатами
+                me.showAddTriggerWindowWithCoords(lat, lng);
             }
         });
     },
 
-    showAddTriggerWindow: function() {
+    /**
+     * Открывает окно добавления точки с предзаполненными координатами.
+     * @param {number} lat
+     * @param {number} lon
+     */
+    showAddTriggerWindowWithCoords: function(lat, lon) {
         var me = this;
         var win = Ext.create('Ext.window.Window', {
             title: 'Новая точка привязки',
@@ -380,46 +391,44 @@ Ext.define('Store.sensortrigger.Module', {
                 xtype: 'numberfield',
                 fieldLabel: 'Широта',
                 itemId: 'latField',
+                value: lat,
                 step: 0.000001,
-                allowBlank: false
+                allowBlank: false,
+                readOnly: false   // можно редактировать, если нужно
             }, {
                 xtype: 'numberfield',
                 fieldLabel: 'Долгота',
                 itemId: 'lonField',
+                value: lon,
                 step: 0.000001,
-                allowBlank: false
-            }, {
-                xtype: 'button',
-                text: 'Выбрать на карте',
-                handler: function() {
-                    me.waitingForMapClick = true;
-                    me.pendingAddWindow = win;
-                    Ext.Msg.alert('Инструкция', 'Кликните на карте в нужном месте');
-                }
+                allowBlank: false,
+                readOnly: false
             }],
             buttons: [{
                 text: 'Сохранить',
                 handler: function() {
                     var sensorId = win.down('#sensorIdField').getValue();
-                    var lat = win.down('#latField').getValue();
-                    var lon = win.down('#lonField').getValue();
+                    var newLat = win.down('#latField').getValue();
+                    var newLon = win.down('#lonField').getValue();
                     var label = win.down('#labelField').getValue();
-                    if (!sensorId || !lat || !lon) {
+                    if (!sensorId || !newLat || !newLon) {
                         Ext.Msg.alert('Ошибка', 'Заполните метку и координаты');
                         return;
                     }
-                    me.addTriggerPoint(sensorId, lat, lon, label);
+                    me.addTriggerPoint(sensorId, newLat, newLon, label);
                     win.close();
-                    me.waitingForMapClick = false;
                 }
             }, {
                 text: 'Отмена',
-                handler: function() { win.close(); me.waitingForMapClick = false; }
+                handler: function() {
+                    win.close();
+                }
             }]
         });
         win.show();
     },
 
+    // -------------------- Симуляция триггера (без изменений) --------------------
     showSimulateWindow: function() {
         var me = this;
         if (!me.vehiclesStore || me.vehiclesStore.getCount() === 0) {
@@ -522,5 +531,10 @@ Ext.define('Store.sensortrigger.Module', {
             return true;
         }
         return false;
+    },
+
+    getMap: function() {
+        if (window.getActiveTabMapContainer) return getActiveTabMapContainer();
+        return window.mapContainer || null;
     }
 });
