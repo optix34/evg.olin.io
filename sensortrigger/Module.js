@@ -1,6 +1,6 @@
 /**
  * Sensor Trigger Extension – "Позиция по меткам"
- * Исправлено: отображение ТС, название вкладки, парсинг дерева.
+ * Исправлено: иконка вкладки fa-bluetooth-b
  */
 
 Ext.define('Store.sensortrigger.Module', {
@@ -27,7 +27,6 @@ Ext.define('Store.sensortrigger.Module', {
         });
     },
 
-    // Ожидание карты
     waitForMap: function(callback) {
         var check = function() {
             var map = window.mapContainer || (window.getActiveTabMapContainer && window.getActiveTabMapContainer());
@@ -42,7 +41,7 @@ Ext.define('Store.sensortrigger.Module', {
     },
 
     // ----------------------------------------------------------------------
-    // ЛЕВАЯ ВКЛАДКА С НОВЫМ НАЗВАНИЕМ
+    // ЛЕВАЯ ВКЛАДКА
     // ----------------------------------------------------------------------
     createNavigationTab: function() {
         var me = this;
@@ -69,8 +68,8 @@ Ext.define('Store.sensortrigger.Module', {
         });
 
         var navTab = Ext.create('Ext.panel.Panel', {
-            title: 'Позиция по меткам',          // ← ИЗМЕНЕНО НАЗВАНИЕ
-            iconCls: 'fa fa-microchip',
+            title: 'Позиция по меткам',
+            iconCls: 'fa fa-bluetooth-b',          // ← ИКОНКА ИЗМЕНЕНА
             layout: 'fit',
             items: [me.vehicleGrid]
         });
@@ -84,7 +83,7 @@ Ext.define('Store.sensortrigger.Module', {
     },
 
     // ----------------------------------------------------------------------
-    // ЗАГРУЗКА ТС С УЛУЧШЕННЫМ ПАРСИНГОМ
+    // ЗАГРУЗКА ТС
     // ----------------------------------------------------------------------
     loadVehicles: function() {
         var me = this;
@@ -108,7 +107,6 @@ Ext.define('Store.sensortrigger.Module', {
                 console.log('[sensortrigger] parsed vehicles count:', vehicles.length);
 
                 if (vehicles.length === 0) {
-                    // Покажем предупреждение с примером данных для диагностики
                     Ext.Msg.alert('Внимание', 'Не найдено транспортных средств. Убедитесь, что в системе есть ТС.\nОтвет сервера: ' + JSON.stringify(rawData).substring(0, 200));
                     return;
                 }
@@ -121,7 +119,6 @@ Ext.define('Store.sensortrigger.Module', {
                     me.vehicleGrid.reconfigure(me.vehiclesStore);
                 }
 
-                // Генерация мок-датчиков
                 me.mockSensors = {};
                 vehicles.forEach(function(v) {
                     me.mockSensors[v.vehid] = [
@@ -138,15 +135,12 @@ Ext.define('Store.sensortrigger.Module', {
         });
     },
 
-    // Улучшенный парсинг дерева (поддерживает разные форматы)
     flattenVehicleTreeImproved: function(nodes, result) {
         result = result || [];
         if (!nodes) return result;
         if (!Ext.isArray(nodes)) nodes = [nodes];
 
         Ext.Array.each(nodes, function(node) {
-            // Проверяем, является ли узел транспортным средством
-            // В PILOT vehid > 0 и обычно есть поле name
             if (node.vehid && parseInt(node.vehid) > 0) {
                 result.push({
                     vehid: node.vehid,
@@ -156,7 +150,6 @@ Ext.define('Store.sensortrigger.Module', {
                     year: node.year || ''
                 });
             }
-            // Рекурсивно обходим дочерние элементы (поле может называться children, items, nodes)
             var children = node.children || node.items || node.nodes || [];
             if (children.length) {
                 this.flattenVehicleTreeImproved(children, result);
@@ -166,7 +159,7 @@ Ext.define('Store.sensortrigger.Module', {
     },
 
     // ----------------------------------------------------------------------
-    // ТОЧКИ ТРИГГЕРА (без изменений, работают)
+    // ТОЧКИ ТРИГГЕРА
     // ----------------------------------------------------------------------
     loadTriggerPoints: function() {
         var me = this;
@@ -230,7 +223,7 @@ Ext.define('Store.sensortrigger.Module', {
     },
 
     // ----------------------------------------------------------------------
-    // ПРАВАЯ ПАНЕЛЬ УПРАВЛЕНИЯ
+    // ПРАВАЯ ПАНЕЛЬ
     // ----------------------------------------------------------------------
     createControlPanel: function() {
         var me = this;
