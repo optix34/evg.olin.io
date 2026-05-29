@@ -1,6 +1,6 @@
 /**
  * Sensor Trigger Extension – "Позиция по меткам"
- * Исправлен парсинг ТС для разных структур данных.
+ * Расширенная диагностика для поиска ТС.
  */
 
 Ext.define('Store.sensortrigger.Module', {
@@ -91,18 +91,16 @@ Ext.define('Store.sensortrigger.Module', {
                     return;
                 }
 
-                if (rawData && rawData.length > 0) {
-                    var firstItem = rawData[0];
-                    console.log('[sensortrigger] First item keys:', Object.keys(firstItem));
-                    console.log('[sensortrigger] First item sample:', JSON.stringify(firstItem).substring(0, 500));
-                }
+                // Расширенная диагностика: поиск любых числовых id
+                me.diagnoseResponse(rawData);
 
-                var vehicles = me.extractVehicles(rawData);
+                var vehicles = me.extractVehiclesDebug(rawData);
                 console.log('[sensortrigger] extracted vehicles count:', vehicles.length);
 
                 if (vehicles.length === 0) {
                     Ext.Msg.alert('Внимание', 'Не найдено транспортных средств.\n\n' +
-                        'Ответ сервера (первые 500 символов):\n' + JSON.stringify(rawData).substring(0, 500));
+                        'Проверьте консоль браузера для деталей.\n' +
+                        'Возможно, нужно использовать другой endpoint или параметры.');
                     return;
                 }
 
@@ -130,20 +128,58 @@ Ext.define('Store.sensortrigger.Module', {
         });
     },
 
-    extractVehicles: function(nodes, result) {
+    diagnoseResponse: function(data, depth) {
+        depth = depth || 0;
+        var indent = Array(depth+1).join('  ');
+        if (Ext.isArray(data)) {
+            console.log(indent + 'Array length:', data.length);
+            for (var i = 0; i < Math.min(data.length, 3); i++) {
+                this.diagnoseResponse(data[i], depth+1);
+            }
+        } else if (typeof data === 'object' && data !== null) {
+            console.log(indent + 'Node:', data.name || '(unnamed)', 'keys:', Object.keys(data));
+            // Ищем числовые id
+            if (data.id && typeof data.id === 'number') console.log(indent + '  numeric id:', data.id);
+            if (data.vehid && typeof data.vehid === 'number') console.log(indent + '  vehid:', data.vehid);
+            if (data.object_id && typeof data.object_id === 'number') console.log(indent + '  object_id:', data.object_id);
+            if (data.orgid && typeof data.orgid === 'number') console.log(indent + '  orgid:', data.orgid);
+            // Если есть дети, рекурсивно
+            if (data.children && data.children.length) {
+                console.log(indent + '  children count:', data.children.length);
+                for (var j = 0; j < Math.min(data.children.length, 2); j++) {
+                    this.diagnoseResponse(data.children[j], depth+1);
+                }
+            }
+        }
+    },
+
+    extractVehiclesDebug: function(nodes, result, depth) {
+        depth = depth || 0;
         result = result || [];
         if (!nodes) return result;
         if (!Ext.isArray(nodes)) nodes = [nodes];
 
         Ext.Array.each(nodes, function(node) {
-            // Пытаемся найти идентификатор ТС по разным полям
-            var vehid = node.vehid || node.object_id || node.id || node.vehicle_id || null;
+            var indent = Array(depth+1).join('  ');
+            console.log(indent + 'Checking node:', node.name, 'keys:', Object.keys(node));
+            
+            // Пытаемся найти идентификатор ТС – теперь включаем orgid и числовой id
+            var vehid = node.vehid || node.object_id || node.vehicle_id || null;
+            // Если id – число и > 0, используем его
+            if (!vehid && node.id && typeof node.id === 'number' && node.id > 0) vehid = node.id;
+            // Если orgid – число и > 0, возможно это идентификатор ТС
+            if (!vehid && node.orgid && typeof node.orgid === 'number' && node.orgid > 0) vehid = node.orgid;
+            
+            if (vehid) {
+                console.log(indent + '  potential vehid:', vehid, 'type:', typeof vehid);
+            }
             if (vehid && parseInt(vehid) > 0) {
-                // Дополнительно: если есть дети, возможно это группа, а не ТС.
                 var hasChildren = node.children && node.children.length > 0;
-                // Если нет детей или явно указан тип 'vehicle' – считаем ТС
-                var isVehicle = !hasChildren || node.type === 'vehicle' || node.vehicle === true;
+                // Считаем, что если нет детей или есть признак vehicle, или это не папка (iconCls не folder_icon)
+                var isFolder = node.iconCls === 'folder_icon';
+                var isVehicle = !hasChildren && !isFolder;
                 if (isVehicle) {
+                    console.log(indent + '  -> ACCEPT as vehicle');
                     result.push({
                         vehid: vehid,
                         name: node.name || 'Без имени',
@@ -151,12 +187,15 @@ Ext.define('Store.sensortrigger.Module', {
                         model: node.model || '',
                         year: node.year || ''
                     });
+                } else {
+                    console.log(indent + '  -> REJECTED (hasChildren=' + hasChildren + ', isFolder=' + isFolder + ')');
                 }
+            } else {
+                console.log(indent + '  -> no valid vehid');
             }
-            // Рекурсивный обход детей
             var children = node.children || node.items || node.nodes || [];
             if (children.length) {
-                this.extractVehicles(children, result);
+                this.extractVehiclesDebug(children, result, depth+1);
             }
         }, this);
         return result;
