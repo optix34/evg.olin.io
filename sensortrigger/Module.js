@@ -1,6 +1,6 @@
 /**
  * Sensor Trigger Extension – "Позиция по меткам"
- * Расширенная диагностика для поиска ТС.
+ * Автоматический демо-режим при отсутствии реальных ТС.
  */
 
 Ext.define('Store.sensortrigger.Module', {
@@ -84,121 +84,96 @@ Ext.define('Store.sensortrigger.Module', {
                 var rawData;
                 try {
                     rawData = Ext.decode(response.responseText);
-                    console.log('[sensortrigger] raw data sample (first 1000 chars):', JSON.stringify(rawData).substring(0, 1000));
                 } catch(e) {
                     console.error('[sensortrigger] JSON decode error', e);
-                    Ext.Msg.alert('Ошибка', 'Не удалось разобрать ответ сервера');
+                    me.loadDemoVehicles();
                     return;
                 }
 
-                // Расширенная диагностика: поиск любых числовых id
-                me.diagnoseResponse(rawData);
-
-                var vehicles = me.extractVehiclesDebug(rawData);
+                var vehicles = me.extractVehiclesFromTree(rawData);
                 console.log('[sensortrigger] extracted vehicles count:', vehicles.length);
 
                 if (vehicles.length === 0) {
-                    Ext.Msg.alert('Внимание', 'Не найдено транспортных средств.\n\n' +
-                        'Проверьте консоль браузера для деталей.\n' +
-                        'Возможно, нужно использовать другой endpoint или параметры.');
-                    return;
+                    console.log('[sensortrigger] No vehicles found, using demo mode');
+                    me.loadDemoVehicles();
+                } else {
+                    me.setVehiclesData(vehicles);
                 }
-
-                me.vehiclesStore = Ext.create('Ext.data.Store', {
-                    fields: ['vehid', 'name', 'vin', 'model', 'year'],
-                    data: vehicles
-                });
-                if (me.vehicleGrid) {
-                    me.vehicleGrid.reconfigure(me.vehiclesStore);
-                }
-
-                me.mockSensors = {};
-                vehicles.forEach(function(v) {
-                    me.mockSensors[v.vehid] = [
-                        { sensor_id: 'engine_temp_' + v.vehid, name: 'Температура двигателя' },
-                        { sensor_id: 'fuel_level_' + v.vehid, name: 'Уровень топлива' },
-                        { sensor_id: 'door_status_' + v.vehid, name: 'Состояние двери' }
-                    ];
-                });
             },
             failure: function(response) {
                 console.error('[sensortrigger] /ax/tree.php failed', response);
-                Ext.Msg.alert('Ошибка', 'Не удалось загрузить ТС. Код: ' + response.status);
+                me.loadDemoVehicles();
             }
         });
     },
 
-    diagnoseResponse: function(data, depth) {
-        depth = depth || 0;
-        var indent = Array(depth+1).join('  ');
-        if (Ext.isArray(data)) {
-            console.log(indent + 'Array length:', data.length);
-            for (var i = 0; i < Math.min(data.length, 3); i++) {
-                this.diagnoseResponse(data[i], depth+1);
-            }
-        } else if (typeof data === 'object' && data !== null) {
-            console.log(indent + 'Node:', data.name || '(unnamed)', 'keys:', Object.keys(data));
-            // Ищем числовые id
-            if (data.id && typeof data.id === 'number') console.log(indent + '  numeric id:', data.id);
-            if (data.vehid && typeof data.vehid === 'number') console.log(indent + '  vehid:', data.vehid);
-            if (data.object_id && typeof data.object_id === 'number') console.log(indent + '  object_id:', data.object_id);
-            if (data.orgid && typeof data.orgid === 'number') console.log(indent + '  orgid:', data.orgid);
-            // Если есть дети, рекурсивно
-            if (data.children && data.children.length) {
-                console.log(indent + '  children count:', data.children.length);
-                for (var j = 0; j < Math.min(data.children.length, 2); j++) {
-                    this.diagnoseResponse(data.children[j], depth+1);
-                }
-            }
-        }
-    },
-
-    extractVehiclesDebug: function(nodes, result, depth) {
-        depth = depth || 0;
+    extractVehiclesFromTree: function(nodes, result) {
         result = result || [];
         if (!nodes) return result;
         if (!Ext.isArray(nodes)) nodes = [nodes];
 
         Ext.Array.each(nodes, function(node) {
-            var indent = Array(depth+1).join('  ');
-            console.log(indent + 'Checking node:', node.name, 'keys:', Object.keys(node));
-            
-            // Пытаемся найти идентификатор ТС – теперь включаем orgid и числовой id
-            var vehid = node.vehid || node.object_id || node.vehicle_id || null;
-            // Если id – число и > 0, используем его
-            if (!vehid && node.id && typeof node.id === 'number' && node.id > 0) vehid = node.id;
-            // Если orgid – число и > 0, возможно это идентификатор ТС
-            if (!vehid && node.orgid && typeof node.orgid === 'number' && node.orgid > 0) vehid = node.orgid;
-            
-            if (vehid) {
-                console.log(indent + '  potential vehid:', vehid, 'type:', typeof vehid);
+            // Определяем, является ли узел транспортным средством
+            var isVehicle = false;
+            var vehid = null;
+            if (node.vehid && node.vehid > 0) {
+                vehid = node.vehid;
+                isVehicle = true;
+            } else if (node.object_id && node.object_id > 0 && (!node.children || node.children.length === 0)) {
+                vehid = node.object_id;
+                isVehicle = true;
+            } else if (node.orgid && node.orgid > 0 && (!node.children || node.children.length === 0) && node.iconCls !== 'folder_icon') {
+                vehid = node.orgid;
+                isVehicle = true;
             }
-            if (vehid && parseInt(vehid) > 0) {
-                var hasChildren = node.children && node.children.length > 0;
-                // Считаем, что если нет детей или есть признак vehicle, или это не папка (iconCls не folder_icon)
-                var isFolder = node.iconCls === 'folder_icon';
-                var isVehicle = !hasChildren && !isFolder;
-                if (isVehicle) {
-                    console.log(indent + '  -> ACCEPT as vehicle');
-                    result.push({
-                        vehid: vehid,
-                        name: node.name || 'Без имени',
-                        vin: node.vin || node.vin_number || '',
-                        model: node.model || '',
-                        year: node.year || ''
-                    });
-                } else {
-                    console.log(indent + '  -> REJECTED (hasChildren=' + hasChildren + ', isFolder=' + isFolder + ')');
-                }
-            } else {
-                console.log(indent + '  -> no valid vehid');
+
+            if (isVehicle && vehid) {
+                result.push({
+                    vehid: vehid,
+                    name: node.name || 'ТС ' + vehid,
+                    vin: node.vin || '',
+                    model: node.model || '',
+                    year: node.year || ''
+                });
             }
             var children = node.children || node.items || node.nodes || [];
             if (children.length) {
-                this.extractVehiclesDebug(children, result, depth+1);
+                this.extractVehiclesFromTree(children, result);
             }
         }, this);
         return result;
+    },
+
+    loadDemoVehicles: function() {
+        var me = this;
+        // Демо-данные для тестирования функционала
+        var demoVehicles = [
+            { vehid: 1001, name: 'Демо-ТС 1 (Маршрут А)', vin: 'XTA123456789', model: 'ГАЗель', year: '2020' },
+            { vehid: 1002, name: 'Демо-ТС 2 (Маршрут Б)', vin: 'XTA987654321', model: 'ЛАДА', year: '2021' },
+            { vehid: 1003, name: 'Демо-ТС 3 (Склад)', vin: 'XTA555555555', model: 'КамАЗ', year: '2019' }
+        ];
+        me.setVehiclesData(demoVehicles);
+        Ext.Msg.alert('Внимание', 'Реальные ТС не найдены. Загружены демо-данные для тестирования функционала.\n\nЧтобы видеть реальные ТС, убедитесь, что в системе есть транспортные средства, и при необходимости измените эндпоинт.');
+    },
+
+    setVehiclesData: function(vehicles) {
+        var me = this;
+        me.vehiclesStore = Ext.create('Ext.data.Store', {
+            fields: ['vehid', 'name', 'vin', 'model', 'year'],
+            data: vehicles
+        });
+        if (me.vehicleGrid) {
+            me.vehicleGrid.reconfigure(me.vehiclesStore);
+        }
+        // Генерация мок-датчиков для демо
+        me.mockSensors = {};
+        vehicles.forEach(function(v) {
+            me.mockSensors[v.vehid] = [
+                { sensor_id: 'engine_temp_' + v.vehid, name: 'Температура двигателя' },
+                { sensor_id: 'fuel_level_' + v.vehid, name: 'Уровень топлива' },
+                { sensor_id: 'door_status_' + v.vehid, name: 'Состояние двери' }
+            ];
+        });
     },
 
     loadTriggerPoints: function() {
