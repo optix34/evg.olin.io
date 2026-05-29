@@ -2,102 +2,71 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Marks Manager Extension Documentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marker Labels Manager – Documentation</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 40px auto;
-            padding: 20px;
-            line-height: 1.6;
-            color: #333;
-        }
-        h1, h2 {
-            color: #2c3e50;
-        }
-        .badge {
-            background-color: #3498db;
-            color: white;
-            padding: 5px 10px;
-            border-radius: 4px;
-            display: inline-block;
-            font-size: 14px;
-        }
-        code {
-            background: #f4f4f4;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: monospace;
-        }
-        pre {
-            background: #f4f4f4;
-            padding: 10px;
-            border-radius: 5px;
-            overflow-x: auto;
-        }
-        ul {
-            margin: 10px 0;
-        }
-        .note {
-            background: #e7f3fe;
-            border-left: 4px solid #2196F3;
-            padding: 10px;
-            margin: 15px 0;
-        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; margin: 0; padding: 20px; background: #f3f4f6; color: #1f2937; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h1, h2 { color: #1e3a8a; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; }
+        code, pre { background: #e5e7eb; border-radius: 6px; font-family: monospace; }
+        code { padding: 2px 6px; font-size: 0.9em; }
+        pre { padding: 12px; overflow-x: auto; }
+        .note { background: #fef9c3; border-left: 4px solid #eab308; padding: 12px; margin: 20px 0; border-radius: 6px; }
     </style>
 </head>
 <body>
-    <h1>📌 Marks Manager Extension for PILOT</h1>
-    <p><span class="badge">Version 1.0</span> <span class="badge" style="background-color:#27ae60;">localStorage</span></p>
-    
-    <h2>Overview</h2>
-    <p>The <strong>Marks Manager</strong> extension allows PILOT users to create, store, and manage custom marks (bookmarks) associated with vehicles from the PILOT system.  
-    Marks are saved locally in your browser's <code>localStorage</code> and persist across sessions.</p>
+<div class="container">
+    <h1>📍 Marker Labels Manager – PILOT Extension</h1>
+    <p><strong>Version:</strong> 1.0<br>
+    <strong>Compatibility:</strong> PILOT with Ext JS 7.7+ and extension system.</p>
 
-    <h2>Features</h2>
+    <h2>📌 Description</h2>
+    <p>This extension allows you to create custom markers (labels) and associate them with vehicles from your PILOT fleet. For each marker, the extension displays the last fix time of the linked tracker, helping you monitor vehicle positions.</p>
+
+    <h2>🚀 Features</h2>
     <ul>
-        <li>✅ Load real vehicles from PILOT (<code>/ax/tree.php</code>)</li>
-        <li>✅ Add new marks with unique ID, vehicle association, description, and coordinates</li>
-        <li>✅ Edit and delete existing marks</li>
-        <li>✅ View mark details in the main panel</li>
-        <li>✅ Optional “Show on Map” button centers the PILOT map on the mark location</li>
-        <li>✅ Stores last fix time (creation/update timestamp)</li>
-        <li>✅ Fully client‑side – no backend required</li>
+        <li>Left navigation tab with "Add Marker" button.</li>
+        <li>Modal form to create a marker: unique ID, vehicle selection, description, latitude/longitude.</li>
+        <li>All markers stored in browser's <code>localStorage</code> (persist across sessions).</li>
+        <li>Main panel shows a sortable grid with marker details and last fix time.</li>
+        <li>Delete markers individually.</li>
+        <li>"Refresh Last Fix Times" button to reload vehicle data from PILOT.</li>
+        <li>Integration with PILOT's <code>/ax/tree.php</code> to obtain vehicle names and last fix timestamps.</li>
     </ul>
 
-    <h2>How to Use</h2>
+    <h2>⚙️ Installation</h2>
     <ol>
-        <li><strong>Add a Mark</strong>: Click the “Add Mark” button in the left panel, fill in the ID, select a vehicle from the dropdown, enter description and coordinates (lat/lon), then save.</li>
-        <li><strong>View Details</strong>: Click any row in the left grid – its details will appear on the right panel.</li>
-        <li><strong>Update</strong>: Select a mark, then click “Update” to edit its fields. The Mark ID cannot be changed after creation.</li>
-        <li><strong>Delete</strong>: Select a mark, then click “Delete” and confirm removal.</li>
-        <li><strong>Show on Map</strong>: If you are in the Online or History section, click “Show on Map” to center the map on the mark's coordinates (requires active map).</li>
+        <li>Upload the extension folder to a static web server (Cloudflare Pages, GitHub Pages, etc.).</li>
+        <li>In PILOT Admin, create a new extension with name <code>marker_labels</code> (exact snake_case).</li>
+        <li>Set the external base URL to the folder containing <code>Module.js</code>, e.g. <code>https://your-domain.com/marker_labels/</code>.</li>
+        <li>Save and reload PILOT. The "Marker Labels" tab will appear in the left navigation.</li>
     </ol>
-
-    <h2>Technical Details</h2>
-    <p><strong>Storage key:</strong> <code>marks_manager_marks</code> in <code>localStorage</code></p>
-    <p><strong>Vehicle data source:</strong> <code>/ax/tree.php?vehs=1&state=1</code> (standard PILOT API)</p>
-    <p><strong>Integration pattern:</strong> Navigation tab + main panel (Pattern A from AI_SPECS.md)</p>
-    <p><strong>Required PILOT objects:</strong> <code>skeleton.navigation</code>, <code>skeleton.mapframe</code>, <code>window.mapContainer</code> / <code>getActiveTabMapContainer()</code> (optional for map centering)</p>
 
     <div class="note">
-        <strong>⚠️ Note:</strong> This extension does <em>not</em> modify or write any data back to the PILOT server. All marks are stored locally in your browser. If you clear your browser's local storage, all marks will be lost.
+        <strong>ℹ️ Note:</strong> The extension assumes that the endpoint <code>/ax/tree.php?vehs=1&state=1</code> returns vehicles with a field <code>last_time</code> (Unix timestamp or string). If your PILOT version does not provide this field, the last fix time will show "Not available". You can manually refresh using the button in the main panel.
     </div>
 
-    <h2>Installation & Deployment</h2>
-    <p>To install this extension:</p>
+    <h2>🧩 Usage</h2>
     <ol>
-        <li>Place the folder <code>marks_manager/</code> on a public HTTPS host (e.g., Cloudflare Pages, GitHub Pages, or your own web server).</li>
-        <li>Ensure <code>Module.js</code> and <code>doc/index.html</code> are accessible at the same base URL.</li>
-        <li>Register the extension in PILOT admin panel: set the extension name to <strong>marks_manager</strong> and the base URL to the public folder (e.g., <code>https://yourdomain.com/marks_manager/</code>).</li>
-        <li>PILOT will proxy the extension as <code>/store/marks_manager/Module.js</code> at runtime.</li>
+        <li>Click <strong>Add Marker</strong> in the left panel.</li>
+        <li>Enter a unique Marker ID, select a tracker from the dropdown, add an optional description, and enter latitude/longitude.</li>
+        <li>Click Save – the marker appears in the main grid.</li>
+        <li>To delete a marker, click the "Delete" link in the Actions column.</li>
+        <li>To refresh last fix times, click the "Refresh Last Fix Times" button in the bottom toolbar.</li>
     </ol>
-    <p>No additional dependencies or build steps are required.</p>
 
-    <h2>Compatibility</h2>
-    <p>Designed for PILOT GPS platform with Ext JS 7.7+. Follows strict <a href="https://raw.githubusercontent.com/pilot-telematics/pilot_extensions/main/AI_SPECS.md">AI_SPECS.md</a> rules.</p>
+    <h2>🐛 Troubleshooting</h2>
+    <ul>
+        <li><strong>Vehicle list is empty:</strong> Check that <code>/ax/tree.php</code> is accessible and returns valid JSON with <code>vehid</code> and <code>text</code>.</li>
+        <li><strong>Last fix time not showing:</strong> Ensure that the tree response contains <code>last_time</code> or <code>last_fix</code>. If not, the extension will display "Not available".</li>
+        <li><strong>Markers disappear after browser clear:</strong> Markers are stored in localStorage; clearing browser data will remove them. Consider exporting markers if needed (not implemented in this version).</li>
+        <li><strong>Navigation tab missing icon:</strong> Ensure your PILOT build includes Font Awesome 6. The class <code>fa fa-map-marker-alt</code> should be available.</li>
+    </ul>
 
+    <h2>📄 License</h2>
+    <p>Apache 2.0. See main PILOT Extensions repository.</p>
     <hr>
-    <p><small>Marks Manager Extension – created for PILOT GPS. Use at your own risk.</small></p>
+    <p><em>Documentation for Marker Labels Manager – PILOT Extension.</em></p>
+</div>
 </body>
 </html>
