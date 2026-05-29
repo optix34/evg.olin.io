@@ -1,55 +1,28 @@
-/**
- * PILOT Extension: iButton GeoFence
- * 
- * Версия: 1.0 (исправленная)
- * Назначение: привязка географической точки к iButton ID, автоматическое центрирование карты.
- * Полностью соответствует AI_SPECS.md.
- */
-
 Ext.define('Store.ibutton_geofence.Module', {
     extend: 'Ext.Component',
     singleton: true,
 
-    // Идентификатор маркера на карте (для удаления)
     currentMarkerId: 'ibutton_geofence_marker',
 
-    /**
-     * Главный метод инициализации расширения.
-     * Вызывается PILOT после загрузки Module.js.
-     * @returns {Ext.panel.Panel} Главная панель расширения
-     */
     initModule: function() {
         var me = this;
-
-        // Загружаем привязки из localStorage
         me.bindings = me.loadBindings();
-
-        // Создаём главную панель (будет показана справа)
         var mainPanel = me.createMainPanel();
-
-        // Создаём вкладку навигации (слева)
         var navTab = me.createNavTab(mainPanel);
 
-        // Добавляем вкладку в левую навигацию PILOT
         if (window.skeleton && window.skeleton.navigation) {
             window.skeleton.navigation.add(navTab);
         } else {
-            console.warn('ibutton_geofence: skeleton.navigation не найден');
+            console.warn('ibutton_geofence: skeleton.navigation not found');
         }
 
-        // Добавляем главную панель в mapframe PILOT (если требуется)
         if (window.skeleton && window.skeleton.mapframe) {
             window.skeleton.mapframe.add(mainPanel);
         }
 
-        // Возвращаем главную панель – PILOT покажет её при активации расширения
         return mainPanel;
     },
 
-    /**
-     * Загружает привязки из localStorage
-     * @returns {Array}
-     */
     loadBindings: function() {
         var stored = localStorage.getItem('ibutton_geofence_bindings');
         if (stored) {
@@ -62,18 +35,10 @@ Ext.define('Store.ibutton_geofence.Module', {
         return [];
     },
 
-    /**
-     * Сохраняет привязки в localStorage
-     */
     saveBindings: function() {
         localStorage.setItem('ibutton_geofence_bindings', Ext.encode(this.bindings));
     },
 
-    /**
-     * Возвращает привязку по iButton ID или null
-     * @param {string} ibuttonId
-     * @returns {Object|null}
-     */
     getBindingByIbuttonId: function(ibuttonId) {
         if (!ibuttonId) return null;
         return Ext.Array.findBy(this.bindings, function(b) {
@@ -81,10 +46,6 @@ Ext.define('Store.ibutton_geofence.Module', {
         }) || null;
     },
 
-    /**
-     * Добавляет или обновляет привязку
-     * @param {Object} binding
-     */
     saveBinding: function(binding) {
         var index = Ext.Array.findIndex(this.bindings, function(b) {
             return b.ibuttonId === binding.ibuttonId;
@@ -97,23 +58,14 @@ Ext.define('Store.ibutton_geofence.Module', {
         this.saveBindings();
     },
 
-    /**
-     * Удаляет привязку по iButton ID
-     * @param {string} ibuttonId
-     */
+    // ИСПРАВЛЕНО: вместо Ext.Array.removeIf используем filter
     deleteBinding: function(ibuttonId) {
-        Ext.Array.removeIf(this.bindings, function(b) {
-            return b.ibuttonId === ibuttonId;
+        this.bindings = Ext.Array.filter(this.bindings, function(b) {
+            return b.ibuttonId !== ibuttonId;
         });
         this.saveBindings();
     },
 
-    /**
-     * Центрирует карту и показывает маркер в заданной точке
-     * @param {number} lat
-     * @param {number} lon
-     * @param {string} description
-     */
     showPointOnMap: function(lat, lon, description) {
         var map = window.mapContainer;
         if (!map) {
@@ -121,7 +73,6 @@ Ext.define('Store.ibutton_geofence.Module', {
             return;
         }
 
-        // Центрирование карты
         if (map.setMapCenter) {
             map.setMapCenter(lat, lon);
         } else if (map.map && map.map.setView) {
@@ -131,7 +82,6 @@ Ext.define('Store.ibutton_geofence.Module', {
             return;
         }
 
-        // Удаление старого маркера
         if (map.removeMarker) {
             map.removeMarker(this.currentMarkerId);
         } else if (map.map && map.map.eachLayer) {
@@ -146,7 +96,6 @@ Ext.define('Store.ibutton_geofence.Module', {
             }
         }
 
-        // Добавление нового маркера
         var markerOptions = {
             id: this.currentMarkerId,
             lat: lat,
@@ -155,25 +104,18 @@ Ext.define('Store.ibutton_geofence.Module', {
         };
         if (map.addMarker) {
             map.addMarker(markerOptions);
-        } else if (map.map && L && L.marker) {
-            var leafletMarker = L.marker([lat, lon], { title: markerOptions.hint });
+        } else if (map.map && window.L && window.L.marker) {
+            var leafletMarker = window.L.marker([lat, lon], { title: markerOptions.hint });
             leafletMarker.options.id = markerOptions.id;
             leafletMarker.addTo(map.map);
         } else {
-            // Не критично, просто предупреждение
             console.warn('ibutton_geofence: не удалось добавить маркер');
         }
     },
 
-    /**
-     * Создаёт вкладку навигации с деревом ТС
-     * @param {Ext.panel.Panel} mainPanel
-     * @returns {Ext.panel.Panel}
-     */
     createNavTab: function(mainPanel) {
         var me = this;
 
-        // TreeStore для загрузки ТС из PILOT
         var vehiclesStore = Ext.create('Ext.data.TreeStore', {
             proxy: {
                 type: 'ajax',
@@ -213,23 +155,17 @@ Ext.define('Store.ibutton_geofence.Module', {
             iconCls: 'fa fa-key',
             layout: 'fit',
             items: [treePanel],
-            map_frame: mainPanel   // Обязательная связь для паттерна 1
+            map_frame: mainPanel
         });
 
         return navTab;
     },
 
-    /**
-     * Обработчик выбора ТС
-     * @param {Ext.data.Model} record
-     * @param {Ext.panel.Panel} mainPanel
-     */
     onVehicleSelected: function(record, mainPanel) {
         var me = this;
         var ibuttonId = record.get('ibutton');
         var vehicleName = record.get('name') || record.get('text') || '—';
 
-        // Обновляем информационную панель
         var infoPanel = mainPanel.infoPanel;
         if (infoPanel) {
             infoPanel.down('displayfield[name=vehicleName]').setValue(vehicleName);
@@ -250,7 +186,6 @@ Ext.define('Store.ibutton_geofence.Module', {
                              (binding.description ? ' (' + binding.description + ')' : '');
             if (infoPanel) {
                 infoPanel.down('displayfield[name=status]').setValue(statusText);
-                // Сохраняем координаты в специальное поле для кнопки "Показать на карте"
                 infoPanel.currentCoords = { lat: binding.lat, lon: binding.lon, desc: binding.description };
             }
             me.showPointOnMap(binding.lat, binding.lon, binding.description);
@@ -263,14 +198,9 @@ Ext.define('Store.ibutton_geofence.Module', {
         }
     },
 
-    /**
-     * Создаёт главную панель (управление привязками + информация)
-     * @returns {Ext.panel.Panel}
-     */
     createMainPanel: function() {
         var me = this;
 
-        // Store для грида привязок
         var bindingsStore = Ext.create('Ext.data.ArrayStore', {
             fields: ['ibuttonId', 'lat', 'lon', 'description'],
             data: me.bindings.map(function(b) {
@@ -329,7 +259,6 @@ Ext.define('Store.ibutton_geofence.Module', {
             ]
         });
 
-        // Информационная панель с выводом данных о выбранном ТС
         var infoPanel = Ext.create('Ext.panel.Panel', {
             title: 'Информация о выбранном ТС',
             layout: 'anchor',
@@ -363,18 +292,12 @@ Ext.define('Store.ibutton_geofence.Module', {
             ]
         });
 
-        // Сохраняем ссылки для доступа из других методов
         mainPanel.infoPanel = infoPanel;
         mainPanel.bindingsStore = bindingsStore;
 
         return mainPanel;
     },
 
-    /**
-     * Показывает окно добавления/редактирования привязки
-     * @param {Ext.data.Model|null} record
-     * @param {Ext.data.Store} store
-     */
     showBindingForm: function(record, store) {
         var me = this;
         var isEdit = (record !== null);
