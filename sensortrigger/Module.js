@@ -5,6 +5,7 @@
  * При срабатывании датчика (симуляция) транспортное средство перемещается в заданную точку.
  * 
  * Соответствует AI_SPECS.md и требованиям промта.
+ * Исправлена ошибка с Ext.EventManager.onWindowResize.
  */
 
 Ext.define('Store.sensortrigger.Module', {
@@ -26,6 +27,10 @@ Ext.define('Store.sensortrigger.Module', {
             Ext.log.error('sensortrigger: map container not found');
             return;
         }
+
+        // Инициализация флагов для работы с картой
+        me.waitingForMapClick = false;
+        me.pendingAddWindow = null;
 
         // Сохраняем ссылку на модуль глобально для вызовов из симуляции
         window.sensortriggerModule = me;
@@ -298,12 +303,33 @@ Ext.define('Store.sensortrigger.Module', {
         // Размещаем панель в правом верхнем углу (относительно документа)
         me.controlPanel.show();
         me.controlPanel.setPosition(document.documentElement.clientWidth - 410, 80);
-        // Следим за изменением размера окна
-        Ext.EventManager.onWindowResize(function(width) {
+
+        // Безопасное отслеживание изменения размера окна
+        // Используем Ext.on (если доступен) или нативный addEventListener
+        var resizeHandler = function(width) {
             if (me.controlPanel && me.controlPanel.isVisible()) {
-                me.controlPanel.setPosition(width - 410, 80);
+                var w = width || document.documentElement.clientWidth;
+                me.controlPanel.setPosition(w - 410, 80);
             }
-        });
+        };
+
+        if (Ext.on && typeof Ext.on === 'function') {
+            // Ext JS способ
+            Ext.on('resize', resizeHandler);
+        } else if (window.addEventListener) {
+            window.addEventListener('resize', function() {
+                resizeHandler(document.documentElement.clientWidth);
+            });
+        } else {
+            // Fallback: проверка через интервал (не рекомендуется, но для совместимости)
+            var interval = setInterval(function() {
+                if (me.controlPanel && me.controlPanel.isVisible()) {
+                    resizeHandler(document.documentElement.clientWidth);
+                }
+            }, 500);
+            // Сохраняем интервал для возможной очистки при разрушении модуля
+            me._resizeInterval = interval;
+        }
     },
 
     // ----------------------------------------------------------------------
@@ -417,8 +443,6 @@ Ext.define('Store.sensortrigger.Module', {
      */
     setupMapClickListener: function() {
         var me = this;
-        // Будем устанавливать временный флаг при открытии окна добавления
-        // Слушатель будет активен только когда me.waitingForMapClick === true
         var map = me.getPilotMap();
         if (!map || !map.map) return;
         map.map.on('click', function(e) {
