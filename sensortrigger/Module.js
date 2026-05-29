@@ -1,495 +1,545 @@
 /**
- * PILOT Extension: Позиция по меткам (Sensor Trigger)
+ * Marks Manager Extension for PILOT GPS
  * 
- * Отображает объекты клиента (ТС), позволяет задавать точки привязки на карте
- * и перемещать маркер объекта при срабатывании метки (симуляция).
+ * This extension allows users to create and manage custom marks (bookmarks)
+ * associated with real vehicles from the PILOT system.
+ * Marks are stored locally in the browser's localStorage.
  * 
- * Соответствует AI_SPECS.md.
+ * Pattern: Navigation tab + Main panel (mapframe)
+ * Follows AI_SPECS.md strictly.
  */
 
-Ext.define('Store.sensortrigger.Module', {
+Ext.define('Store.marks_manager.Module', {
     extend: 'Ext.Component',
 
+    /**
+     * @property {String} storageKey
+     * Key used for localStorage to store marks.
+     */
+    storageKey: 'marks_manager_marks',
+
+    /**
+     * @property {Ext.data.Store} vehicleStore
+     * Store that holds vehicles for the combobox.
+     */
+    vehicleStore: null,
+
+    /**
+     * @property {Ext.grid.Panel} marksGrid
+     * Reference to the left grid.
+     */
+    marksGrid: null,
+
+    /**
+     * @property {Ext.panel.Panel} detailsPanel
+     * Reference to the right details panel.
+     */
+    detailsPanel: null,
+
+    /**
+     * @property {Object} currentMark
+     * Currently selected mark object.
+     */
+    currentMark: null,
+
+    /**
+     * Entry point called by PILOT when the extension is loaded.
+     * Must be a class method (not a global function).
+     */
     initModule: function() {
         var me = this;
-        console.log('[sensortrigger] initModule started');
 
-        if (!window.skeleton) {
-            console.error('[sensortrigger] skeleton not found');
-            return;
-        }
+        // 1. Load vehicles from PILOT (hierarchical tree)
+        me.loadVehicles(function(vehiclesArray) {
+            // Create a store for the combobox
+            me.vehicleStore = Ext.create('Ext.data.Store', {
+                fields: ['vehid', 'name'],
+                data: vehiclesArray
+            });
 
-        me.waitForMap(function() {
-            me.createNavigationTab();
-            me.loadVehicles();
-            me.loadTriggerPoints();
-            me.createControlPanel();
-            me.addMapButton();
-            me.setupMapClickListener();
+            // 2. Create left navigation tab
+            var leftPanel = me.createLeftPanel();
+            // 3. Create right main panel (details)
+            var rightPanel = me.createRightPanel();
+
+            // 4. Link them (important for some internal PILOT logic)
+            leftPanel.map_frame = rightPanel;
+
+            // 5. Add to PILOT skeleton
+            skeleton.navigation.add(leftPanel);
+            skeleton.mapframe.add(rightPanel);
+
+            // 6. Load marks from localStorage and populate grid
+            me.refreshMarksGrid();
         });
     },
 
-    // Ожидание появления карты (асинхронно)
-    waitForMap: function(callback) {
-        var check = function() {
-            var map = window.mapContainer || (window.getActiveTabMapContainer ? window.getActiveTabMapContainer() : null);
-            if (map && map.map) {
-                callback();
-            } else {
-                console.log('[sensortrigger] waiting for map...');
-                setTimeout(check, 500);
-            }
-        };
-        check();
-    },
-
-    // ----- Левая навигационная вкладка -----
-    createNavigationTab: function() {
-        var me = this;
-
-        me.vehicleGrid = Ext.create('Ext.grid.Panel', {
-            title: 'Транспорт',
-            store: Ext.create('Ext.data.Store', {
-                fields: ['vehid', 'name', 'vin', 'model', 'year']
-            }),
-            columns: [
-                { text: 'Название', dataIndex: 'name', flex: 2 },
-                { text: 'VIN', dataIndex: 'vin', flex: 2 },
-                { text: 'Модель', dataIndex: 'model', flex: 1 },
-                { text: 'Год', dataIndex: 'year', flex: 1 }
-            ],
-            listeners: {
-                select: function(grid, record) {
-                    var vehid = record.get('vehid');
-                    var sensors = me.mockSensors ? me.mockSensors[vehid] : [];
-                    var msg = sensors.map(function(s) {
-                        return s.name + ' (' + s.sensor_id + ')';
-                    }).join('\n');
-                    Ext.Msg.alert('Датчики', msg || 'Нет датчиков');
-                }
-            }
-        });
-
-        var navTab = Ext.create('Ext.panel.Panel', {
-            title: 'Позиция по меткам',   // требуемое название
-            iconCls: 'fa fa-microchip',
-            layout: 'fit',
-            items: [me.vehicleGrid]
-        });
-
-        if (skeleton.navigation) {
-            skeleton.navigation.add(navTab);
-            console.log('[sensortrigger] navigation tab added');
-        } else {
-            console.error('[sensortrigger] skeleton.navigation not found');
-        }
-    },
-
-    // ----- Загрузка ТС из PILOT -----
-    loadVehicles: function() {
-        var me = this;
-
+    /**
+     * Loads vehicles from /ax/tree.php?vehs=1&state=1
+     * Parses hierarchical groups and extracts vehicles.
+     * @param {Function} callback Called with array of {vehid, name}
+     */
+    loadVehicles: function(callback) {
         Ext.Ajax.request({
             url: '/ax/tree.php',
-            params: { vehs: 1, state: 1 },
+            params: {
+                vehs: 1,
+                state: 1
+            },
+            scope: this,
             success: function(response) {
-                var data = Ext.decode(response.responseText);
-                var vehicles = me.flattenVehicleTree(data);
-                console.log('[sensortrigger] loaded vehicles:', vehicles.length);
-
-                me.vehiclesStore = Ext.create('Ext.data.Store', {
-                    fields: ['vehid', 'name', 'vin', 'model', 'year'],
-                    data: vehicles
-                });
-                if (me.vehicleGrid) {
-                    me.vehicleGrid.reconfigure(me.vehiclesStore);
-                }
-
-                // Генерация мок-датчиков для демонстрации
-                me.mockSensors = {};
-                vehicles.forEach(function(v) {
-                    me.mockSensors[v.vehid] = [
-                        { sensor_id: 'engine_temp_' + v.vehid, name: 'Температура двигателя' },
-                        { sensor_id: 'fuel_level_' + v.vehid, name: 'Уровень топлива' },
-                        { sensor_id: 'door_status_' + v.vehid, name: 'Состояние двери' }
-                    ];
-                });
-
-                if (vehicles.length === 0) {
-                    Ext.Msg.alert('Информация', 'Нет объектов клиента в системе');
+                try {
+                    var data = Ext.decode(response.responseText);
+                    var vehicles = [];
+                    // Recursively traverse the tree to collect vehicles
+                    function traverse(node) {
+                        if (node.children && Ext.isArray(node.children)) {
+                            Ext.each(node.children, function(child) {
+                                // If child has a 'vehid' field, it's a vehicle
+                                if (child.vehid !== undefined) {
+                                    vehicles.push({
+                                        vehid: child.vehid,
+                                        name: child.name || l('Unknown')
+                                    });
+                                }
+                                // Recurse if there are more children
+                                if (child.children) {
+                                    traverse(child);
+                                }
+                            });
+                        }
+                    }
+                    // The response is an array of root groups
+                    Ext.each(data, function(rootGroup) {
+                        traverse(rootGroup);
+                    });
+                    callback(vehicles);
+                } catch(e) {
+                    Ext.Msg.alert(l('Error'), l('Failed to parse vehicle data'));
+                    callback([]);
                 }
             },
             failure: function() {
-                Ext.Msg.alert('Ошибка', 'Не удалось загрузить объекты клиента');
-                console.error('[sensortrigger] /ax/tree.php request failed');
+                Ext.Msg.alert(l('Error'), l('Could not load vehicles from PILOT. Please refresh the page.'));
+                callback([]);
             }
         });
     },
 
-    // Преобразование дерева групп/ТС в плоский список
-    flattenVehicleTree: function(nodes, result) {
-        result = result || [];
-        if (!Ext.isArray(nodes)) return result;
-        Ext.Array.each(nodes, function(node) {
-            if (node.vehid && node.vehid > 0) {
-                result.push({
-                    vehid: node.vehid,
-                    name: node.name || 'N/A',
-                    vin: node.vin || '',
-                    model: node.model || '',
-                    year: node.year || ''
-                });
-            }
-            if (node.children && node.children.length) {
-                this.flattenVehicleTree(node.children, result);
-            }
-        }, this);
-        return result;
-    },
-
-    // ----- Работа с точками привязки (localStorage) -----
-    loadTriggerPoints: function() {
-        var me = this;
-        me.triggerPointsStore = Ext.create('Ext.data.Store', {
-            fields: ['sensorId', 'lat', 'lon', 'label'],
-            data: []
-        });
-        var stored = localStorage.getItem('sensortrigger_points');
-        if (stored) {
-            try {
-                var points = Ext.decode(stored);
-                me.triggerPointsStore.loadData(points);
-                console.log('[sensortrigger] loaded', points.length, 'trigger points');
-            } catch(e) {}
-        }
-    },
-
-    saveTriggerPoints: function() {
-        var data = [];
-        this.triggerPointsStore.each(function(rec) {
-            data.push(rec.getData());
-        });
-        localStorage.setItem('sensortrigger_points', Ext.encode(data));
-    },
-
-    addTriggerPoint: function(sensorId, lat, lon, label) {
-        var me = this;
-        var record = Ext.create('Ext.data.Model', {
-            fields: ['sensorId', 'lat', 'lon', 'label'],
-            data: { sensorId: sensorId, lat: lat, lon: lon, label: label || '' }
-        });
-        me.triggerPointsStore.add(record);
-        me.saveTriggerPoints();
-        me.addTriggerPointMarker(record);
-        Ext.Msg.alert('Успех', 'Точка добавлена');
-    },
-
-    deleteTriggerPoint: function(record) {
-        var me = this;
-        me.triggerPointsStore.remove(record);
-        me.saveTriggerPoints();
-        me.removeTriggerPointMarker(record.get('sensorId'));
-    },
-
-    addTriggerPointMarker: function(record) {
-        var map = this.getMap();
-        if (!map || !map.addMarker) return;
-        map.addMarker({
-            id: 'trigger_' + record.get('sensorId'),
-            lat: record.get('lat'),
-            lon: record.get('lon'),
-            hint: record.get('label') || record.get('sensorId')
-        });
-    },
-
-    removeTriggerPointMarker: function(sensorId) {
-        var map = this.getMap();
-        if (map && map.removeMarker) {
-            map.removeMarker('trigger_' + sensorId);
-        }
-    },
-
-    // ----- Правая панель управления -----
-    createControlPanel: function() {
+    /**
+     * Creates the left navigation panel containing toolbar and grid.
+     * @returns {Ext.panel.Panel}
+     */
+    createLeftPanel: function() {
         var me = this;
 
-        me.logStore = Ext.create('Ext.data.Store', {
-            fields: ['timestamp', 'vehicleName', 'sensorId', 'targetLabel'],
-            data: []
-        });
-
-        var pointsGrid = Ext.create('Ext.grid.Panel', {
-            title: 'Точки привязки',
-            store: me.triggerPointsStore,
+        // Create the grid that will display marks
+        me.marksGrid = Ext.create('Ext.grid.Panel', {
+            flex: 1,
+            store: Ext.create('Ext.data.Store', {
+                fields: ['id', 'trackerId', 'trackerName', 'description', 'lat', 'lon', 'lastFixTime'],
+                data: []
+            }),
             columns: [
-                { text: 'Метка (ID)', dataIndex: 'sensorId', flex: 2 },
-                { text: 'Описание', dataIndex: 'label', flex: 2 },
-                { text: 'Координаты', flex: 1, renderer: function(v, m, rec) {
-                    return rec.get('lat') + ', ' + rec.get('lon');
-                }}
+                { text: l('Mark ID'), dataIndex: 'id', width: 80, renderer: function(v) { return Ext.String.ellipsis(v, 10); } },
+                { text: l('Tracker'), dataIndex: 'trackerName', flex: 1 },
+                { text: l('Description'), dataIndex: 'description', flex: 2, renderer: function(v) { return Ext.String.ellipsis(v || '', 30); } },
+                { text: l('Last Fix'), dataIndex: 'lastFixTime', width: 140, renderer: function(v) { return v ? Ext.util.Format.date(new Date(v), 'Y-m-d H:i:s') : ''; } }
             ],
-            height: 200,
+            listeners: {
+                selectionchange: function(grid, selected) {
+                    if (selected && selected.length > 0) {
+                        me.currentMark = selected[0].data;
+                        me.showMarkDetails(me.currentMark);
+                    } else {
+                        me.currentMark = null;
+                        me.showMarkDetails(null);
+                    }
+                },
+                scope: me
+            }
+        });
+
+        // Toolbar with "Add Mark" button
+        var toolbar = Ext.create('Ext.toolbar.Toolbar', {
+            items: [
+                {
+                    text: l('Add Mark'),
+                    iconCls: 'fa fa-plus',
+                    handler: function() {
+                        me.openMarkWindow(null); // null = create new
+                    },
+                    scope: me
+                }
+            ]
+        });
+
+        // Left panel container (must be a panel, not a grid directly)
+        var leftPanel = Ext.create('Ext.panel.Panel', {
+            title: l('Marks Manager'),
+            iconCls: 'fa fa-bookmark',
+            layout: 'vbox',
+            items: [toolbar, me.marksGrid]
+        });
+
+        return leftPanel;
+    },
+
+    /**
+     * Creates the right main panel (details view).
+     * @returns {Ext.panel.Panel}
+     */
+    createRightPanel: function() {
+        var me = this;
+
+        me.detailsPanel = Ext.create('Ext.panel.Panel', {
+            title: l('Mark Details'),
+            layout: 'vbox',
+            bodyPadding: 10,
+            items: [
+                {
+                    xtype: 'container',
+                    layout: 'anchor',
+                    defaults: { anchor: '100%', margin: '0 0 10 0' },
+                    items: [
+                        { xtype: 'displayfield', fieldLabel: l('Mark ID'), name: 'id' },
+                        { xtype: 'displayfield', fieldLabel: l('Tracker'), name: 'trackerName' },
+                        { xtype: 'displayfield', fieldLabel: l('Description'), name: 'description' },
+                        { xtype: 'displayfield', fieldLabel: l('Latitude'), name: 'lat' },
+                        { xtype: 'displayfield', fieldLabel: l('Longitude'), name: 'lon' },
+                        { xtype: 'displayfield', fieldLabel: l('Last Fix Time'), name: 'lastFixTime', renderer: function(v) { return v ? Ext.util.Format.date(new Date(v), 'Y-m-d H:i:s') : ''; } }
+                    ]
+                },
+                {
+                    xtype: 'container',
+                    layout: 'hbox',
+                    defaults: { margin: '0 5 0 0' },
+                    items: [
+                        {
+                            text: l('Update'),
+                            iconCls: 'fa fa-edit',
+                            handler: function() {
+                                if (me.currentMark) {
+                                    me.openMarkWindow(me.currentMark);
+                                } else {
+                                    Ext.Msg.alert(l('Notice'), l('Please select a mark first.'));
+                                }
+                            },
+                            scope: me
+                        },
+                        {
+                            text: l('Delete'),
+                            iconCls: 'fa fa-trash',
+                            handler: function() {
+                                if (me.currentMark) {
+                                    Ext.Msg.confirm(l('Confirm'), l('Delete this mark?'), function(btn) {
+                                        if (btn === 'yes') {
+                                            me.deleteMark(me.currentMark.id);
+                                        }
+                                    });
+                                } else {
+                                    Ext.Msg.alert(l('Notice'), l('Please select a mark first.'));
+                                }
+                            },
+                            scope: me
+                        },
+                        {
+                            text: l('Show on Map'),
+                            iconCls: 'fa fa-map-marker',
+                            handler: function() {
+                                if (me.currentMark && me.currentMark.lat && me.currentMark.lon) {
+                                    me.centerMapOnCoordinates(me.currentMark.lat, me.currentMark.lon);
+                                } else {
+                                    Ext.Msg.alert(l('Notice'), l('No coordinates available for this mark.'));
+                                }
+                            },
+                            scope: me
+                        }
+                    ]
+                }
+            ],
+            // Default message when no mark is selected
             tbar: [
-                { text: 'Добавить', iconCls: 'fa fa-plus', handler: function() { me.showAddTriggerWindow(); } },
-                { text: 'Удалить', iconCls: 'fa fa-trash', handler: function() {
-                    var selected = pointsGrid.getSelectionModel().getSelection();
-                    if (selected.length) me.deleteTriggerPoint(selected[0]);
-                    else Ext.Msg.alert('Внимание', 'Выберите точку');
-                } }
-            ],
-            listeners: {
-                select: function(grid, record) {
-                    var map = me.getMap();
-                    if (map && map.setMapCenter) {
-                        map.setMapCenter(record.get('lat'), record.get('lon'));
-                        map.setMapZoom(15);
-                    }
-                }
-            }
-        });
-
-        var logGrid = Ext.create('Ext.grid.Panel', {
-            title: 'Журнал перемещений',
-            store: me.logStore,
-            columns: [
-                { text: 'Время', dataIndex: 'timestamp', width: 120 },
-                { text: 'Объект', dataIndex: 'vehicleName', flex: 2 },
-                { text: 'Метка', dataIndex: 'sensorId', flex: 2 },
-                { text: 'Точка', dataIndex: 'targetLabel', flex: 2 }
-            ],
-            height: 200
-        });
-
-        me.controlPanel = Ext.create('Ext.panel.Panel', {
-            floating: true,
-            width: 350,
-            shadow: true,
-            layout: 'border',
-            title: 'Управление позициями по меткам',
-            tools: [{ type: 'close', handler: function() { me.controlPanel.hide(); } }],
-            items: [
-                { region: 'north', xtype: 'toolbar', items: [
-                    { text: 'Симуляция срабатывания', iconCls: 'fa fa-bolt', handler: function() { me.showSimulateWindow(); } }
-                ] },
-                { region: 'center', layout: 'fit', items: [pointsGrid] },
-                { region: 'south', height: 220, layout: 'fit', items: [logGrid] }
+                { xtype: 'component', html: '<i class="fa fa-info-circle"></i> ' + l('Select a mark from the left panel to view details') }
             ]
         });
 
-        me.controlPanel.show();
-        me.controlPanel.setPosition(document.documentElement.clientWidth - 360, 80);
-
-        var resizeHandler = function() {
-            if (me.controlPanel && me.controlPanel.isVisible()) {
-                me.controlPanel.setPosition(document.documentElement.clientWidth - 360, 80);
-            }
-        };
-        if (Ext.on) Ext.on('resize', resizeHandler);
-        else window.addEventListener('resize', resizeHandler);
-
-        console.log('[sensortrigger] control panel created');
+        return me.detailsPanel;
     },
 
-    // ----- Кнопка на карте (нижний левый угол) -----
-    addMapButton: function() {
-        var me = this;
-        var map = me.getMap();
-        if (!map || !map.map) {
-            console.error('[sensortrigger] cannot add map button – map not ready');
-            return;
-        }
-
-        var btn = document.createElement('button');
-        btn.innerHTML = '➕ Добавить точку привязки';
-        btn.style.position = 'absolute';
-        btn.style.bottom = '20px';
-        btn.style.left = '20px';          // нижний левый угол
-        btn.style.zIndex = '1000';
-        btn.style.padding = '10px 15px';
-        btn.style.backgroundColor = '#3b82f6';
-        btn.style.color = 'white';
-        btn.style.border = 'none';
-        btn.style.borderRadius = '8px';
-        btn.style.cursor = 'pointer';
-        btn.style.fontWeight = 'bold';
-        btn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
-        btn.onclick = function() { me.showAddTriggerWindow(); };
-
-        var container = map.map._container || map.map.getContainer();
-        if (container && container.parentNode) {
-            container.parentNode.style.position = 'relative';
-            container.parentNode.appendChild(btn);
-            console.log('[sensortrigger] map button added at bottom-left');
-        } else {
-            console.error('[sensortrigger] cannot find map container');
-        }
-    },
-
-    // ----- Работа с картой -----
-    getMap: function() {
-        if (window.getActiveTabMapContainer) return getActiveTabMapContainer();
-        return window.mapContainer || null;
-    },
-
-    setupMapClickListener: function() {
-        var me = this;
-        var map = me.getMap();
-        if (!map || !map.map) return;
-        map.map.on('click', function(e) {
-            if (me.waitingForMapClick && me.pendingAddWindow) {
-                var lat = e.latlng.lat;
-                var lng = e.latlng.lng;
-                var latField = me.pendingAddWindow.down('textfield[itemId=latField]');
-                var lonField = me.pendingAddWindow.down('textfield[itemId=lonField]');
-                if (latField && lonField) {
-                    latField.setValue(lat);
-                    lonField.setValue(lng);
-                }
-                me.waitingForMapClick = false;
-                Ext.Msg.alert('Готово', 'Координаты добавлены');
-            }
-        });
-    },
-
-    // ----- Окно добавления точки привязки -----
-    showAddTriggerWindow: function() {
-        var me = this;
-        var win = Ext.create('Ext.window.Window', {
-            title: 'Новая точка привязки',
-            width: 400,
-            modal: true,
-            layout: 'anchor',
-            defaults: { anchor: '100%', margin: '5 10' },
-            items: [
-                { xtype: 'textfield', fieldLabel: 'Метка (ID)', itemId: 'sensorIdField', allowBlank: false },
-                { xtype: 'textfield', fieldLabel: 'Описание (необязательно)', itemId: 'labelField' },
-                { xtype: 'numberfield', fieldLabel: 'Широта', itemId: 'latField', step: 0.000001, allowBlank: false },
-                { xtype: 'numberfield', fieldLabel: 'Долгота', itemId: 'lonField', step: 0.000001, allowBlank: false },
-                { xtype: 'button', text: 'Выбрать на карте', handler: function() {
-                    me.waitingForMapClick = true;
-                    me.pendingAddWindow = win;
-                    Ext.Msg.alert('Инструкция', 'Кликните на карте в нужном месте');
-                } }
-            ],
-            buttons: [
-                { text: 'Сохранить', handler: function() {
-                    var sensorId = win.down('#sensorIdField').getValue();
-                    var lat = win.down('#latField').getValue();
-                    var lon = win.down('#lonField').getValue();
-                    var label = win.down('#labelField').getValue();
-                    if (!sensorId || !lat || !lon) {
-                        Ext.Msg.alert('Ошибка', 'Заполните метку и координаты');
-                        return;
-                    }
-                    me.addTriggerPoint(sensorId, lat, lon, label);
-                    win.close();
-                    me.waitingForMapClick = false;
-                } },
-                { text: 'Отмена', handler: function() { win.close(); me.waitingForMapClick = false; } }
-            ]
-        });
-        win.show();
-    },
-
-    // ----- Симуляция срабатывания метки -----
-    showSimulateWindow: function() {
-        var me = this;
-        if (!me.vehiclesStore || me.vehiclesStore.getCount() === 0) {
-            Ext.Msg.alert('Ошибка', 'Список объектов не загружен');
-            return;
-        }
-
-        var vehicleCombo = Ext.create('Ext.form.field.ComboBox', {
-            fieldLabel: 'Объект',
-            store: me.vehiclesStore,
-            displayField: 'name',
-            valueField: 'vehid',
-            queryMode: 'local',
-            allowBlank: false,
-            listeners: {
-                select: function(combo, records) {
-                    var vehid = records[0].get('vehid');
-                    var sensors = me.mockSensors[vehid] || [];
-                    sensorCombo.store.loadData(sensors);
-                    sensorCombo.setValue(null);
-                }
-            }
-        });
-
-        var sensorCombo = Ext.create('Ext.form.field.ComboBox', {
-            fieldLabel: 'Метка (ID)',
-            store: Ext.create('Ext.data.Store', { fields: ['sensor_id', 'name'] }),
-            displayField: 'name',
-            valueField: 'sensor_id',
-            queryMode: 'local',
-            allowBlank: false
-        });
-
-        var win = Ext.create('Ext.window.Window', {
-            title: 'Симуляция срабатывания метки',
-            width: 400,
-            modal: true,
-            items: [vehicleCombo, sensorCombo],
-            buttons: [
-                { text: 'Переместить', handler: function() {
-                    var vehid = vehicleCombo.getValue();
-                    var sensorId = sensorCombo.getValue();
-                    if (!vehid || !sensorId) {
-                        Ext.Msg.alert('Ошибка', 'Выберите объект и метку');
-                        return;
-                    }
-                    win.close();
-                    me.simulateTrigger(vehid, sensorId);
-                } },
-                { text: 'Отмена', handler: function() { win.close(); } }
-            ]
-        });
-        win.show();
-    },
-
-    simulateTrigger: function(vehid, sensorId) {
-        var me = this;
-        var triggerRecord = null;
-        me.triggerPointsStore.each(function(rec) {
-            if (rec.get('sensorId') === sensorId) {
-                triggerRecord = rec;
-                return false;
-            }
-        });
-        if (!triggerRecord) {
-            Ext.Msg.alert('Нет точки', 'Для метки "' + sensorId + '" не задана точка привязки');
-            return;
-        }
-
-        var vehicleRecord = me.vehiclesStore.findRecord('vehid', vehid);
-        var vehicleName = vehicleRecord ? vehicleRecord.get('name') : 'ID:' + vehid;
-        var success = me.moveVehicleMarker(vehid, triggerRecord.get('lat'), triggerRecord.get('lon'));
-
-        if (success) {
-            me.logStore.add({
-                timestamp: Ext.Date.format(new Date(), 'Y-m-d H:i:s'),
-                vehicleName: vehicleName,
-                sensorId: sensorId,
-                targetLabel: triggerRecord.get('label') || sensorId
+    /**
+     * Shows details of a selected mark in the right panel.
+     * @param {Object} mark Mark object or null to clear.
+     */
+    showMarkDetails: function(mark) {
+        var panel = this.detailsPanel;
+        if (!mark) {
+            // Clear all display fields
+            var fields = ['id', 'trackerName', 'description', 'lat', 'lon', 'lastFixTime'];
+            Ext.each(fields, function(field) {
+                var fieldCmp = panel.down('displayfield[name=' + field + ']');
+                if (fieldCmp) fieldCmp.setValue('');
             });
-            Ext.Msg.alert('Перемещение', 'Объект "' + vehicleName + '" перемещён в точку "' + (triggerRecord.get('label') || sensorId) + '"');
-        } else {
-            Ext.Msg.alert('Ошибка', 'Не удалось найти маркер объекта на карте');
+            return;
+        }
+
+        panel.down('displayfield[name=id]').setValue(mark.id);
+        panel.down('displayfield[name=trackerName]').setValue(mark.trackerName);
+        panel.down('displayfield[name=description]').setValue(mark.description || '');
+        panel.down('displayfield[name=lat]').setValue(mark.lat);
+        panel.down('displayfield[name=lon]').setValue(mark.lon);
+        panel.down('displayfield[name=lastFixTime]').setValue(mark.lastFixTime);
+    },
+
+    /**
+     * Opens a modal window for adding or editing a mark.
+     * @param {Object|null} existingMark Mark to edit, or null for new.
+     */
+    openMarkWindow: function(existingMark) {
+        var me = this;
+        var isEdit = (existingMark !== null);
+        var windowTitle = isEdit ? l('Edit Mark') : l('Add Mark');
+
+        // Create the form panel
+        var formPanel = Ext.create('Ext.form.Panel', {
+            bodyPadding: 10,
+            defaults: {
+                anchor: '100%',
+                margin: '0 0 10 0',
+                labelWidth: 80
+            },
+            items: [
+                {
+                    xtype: 'textfield',
+                    name: 'id',
+                    fieldLabel: l('Mark ID'),
+                    allowBlank: false,
+                    disabled: isEdit,
+                    value: isEdit ? existingMark.id : '',
+                    regex: /^[a-zA-Z0-9_\-]+$/,
+                    regexText: l('Only letters, numbers, underscore and hyphen allowed')
+                },
+                {
+                    xtype: 'combobox',
+                    name: 'trackerId',
+                    fieldLabel: l('Tracker'),
+                    store: me.vehicleStore,
+                    displayField: 'name',
+                    valueField: 'vehid',
+                    queryMode: 'local',
+                    allowBlank: false,
+                    editable: false,
+                    value: isEdit ? existingMark.trackerId : null,
+                    listeners: {
+                        select: function(combo, record) {
+                            // Optionally store trackerName for display
+                            var selectedName = record.get('name');
+                            combo.setValue(record.get('vehid'));
+                            // We'll get the name later on save
+                        }
+                    }
+                },
+                {
+                    xtype: 'textarea',
+                    name: 'description',
+                    fieldLabel: l('Description'),
+                    value: isEdit ? existingMark.description : ''
+                },
+                {
+                    xtype: 'numberfield',
+                    name: 'lat',
+                    fieldLabel: l('Latitude'),
+                    allowBlank: false,
+                    step: 0.000001,
+                    decimalPrecision: 6,
+                    value: isEdit ? existingMark.lat : 0
+                },
+                {
+                    xtype: 'numberfield',
+                    name: 'lon',
+                    fieldLabel: l('Longitude'),
+                    allowBlank: false,
+                    step: 0.000001,
+                    decimalPrecision: 6,
+                    value: isEdit ? existingMark.lon : 0
+                }
+            ]
+        });
+
+        var win = Ext.create('Ext.window.Window', {
+            title: windowTitle,
+            width: 450,
+            modal: true,
+            layout: 'fit',
+            items: [formPanel],
+            buttons: [
+                {
+                    text: l('Save'),
+                    handler: function() {
+                        var form = formPanel.getForm();
+                        if (form.isValid()) {
+                            var values = form.getValues();
+                            // Get tracker name from vehicleStore
+                            var trackerRecord = me.vehicleStore.findRecord('vehid', values.trackerId);
+                            var trackerName = trackerRecord ? trackerRecord.get('name') : '';
+
+                            if (isEdit) {
+                                // Update existing mark
+                                var updatedMark = Ext.apply({}, existingMark, {
+                                    trackerId: values.trackerId,
+                                    trackerName: trackerName,
+                                    description: values.description,
+                                    lat: parseFloat(values.lat),
+                                    lon: parseFloat(values.lon),
+                                    lastFixTime: new Date().toISOString()
+                                });
+                                me.updateMark(updatedMark);
+                            } else {
+                                // Create new mark
+                                var newMark = {
+                                    id: values.id,
+                                    trackerId: values.trackerId,
+                                    trackerName: trackerName,
+                                    description: values.description,
+                                    lat: parseFloat(values.lat),
+                                    lon: parseFloat(values.lon),
+                                    lastFixTime: new Date().toISOString()
+                                };
+                                me.createMark(newMark);
+                            }
+                            win.close();
+                        }
+                    },
+                    scope: me
+                },
+                {
+                    text: l('Cancel'),
+                    handler: function() { win.close(); }
+                }
+            ]
+        });
+
+        win.show();
+    },
+
+    /**
+     * Retrieves all marks from localStorage.
+     * @returns {Array} Array of mark objects.
+     */
+    getAllMarks: function() {
+        var marksJson = localStorage.getItem(this.storageKey);
+        if (!marksJson) return [];
+        try {
+            return Ext.decode(marksJson);
+        } catch(e) {
+            return [];
         }
     },
 
-    moveVehicleMarker: function(vehid, lat, lon) {
-        var map = this.getMap();
-        if (!map) return false;
-        var marker = map.getMarker ? map.getMarker(vehid) : null;
-        if (marker && marker.setLatLng) {
-            marker.setLatLng([lat, lon]);
-            return true;
-        } else if (map.addMarker) {
-            if (map.removeMarker) map.removeMarker(vehid);
-            map.addMarker({ id: vehid, lat: lat, lon: lon, hint: 'Vehicle' });
-            return true;
+    /**
+     * Saves the marks array to localStorage.
+     * @param {Array} marks Array of mark objects.
+     */
+    saveAllMarks: function(marks) {
+        localStorage.setItem(this.storageKey, Ext.encode(marks));
+    },
+
+    /**
+     * Creates a new mark (adds to storage and refreshes grid).
+     * @param {Object} mark Mark object to add.
+     */
+    createMark: function(mark) {
+        var marks = this.getAllMarks();
+        // Ensure unique ID
+        if (marks.some(function(m) { return m.id === mark.id; })) {
+            Ext.Msg.alert(l('Error'), l('Mark ID already exists. Please choose a different ID.'));
+            return false;
         }
-        return false;
+        marks.push(mark);
+        this.saveAllMarks(marks);
+        this.refreshMarksGrid();
+        return true;
+    },
+
+    /**
+     * Updates an existing mark.
+     * @param {Object} updatedMark Mark with updated fields.
+     */
+    updateMark: function(updatedMark) {
+        var marks = this.getAllMarks();
+        var index = Ext.Array.findIndex(marks, function(m) { return m.id === updatedMark.id; });
+        if (index !== -1) {
+            marks[index] = updatedMark;
+            this.saveAllMarks(marks);
+            this.refreshMarksGrid();
+            // If the updated mark was currently selected, refresh details
+            if (this.currentMark && this.currentMark.id === updatedMark.id) {
+                this.currentMark = updatedMark;
+                this.showMarkDetails(updatedMark);
+            }
+        } else {
+            Ext.Msg.alert(l('Error'), l('Mark not found for update.'));
+        }
+    },
+
+    /**
+     * Deletes a mark by ID.
+     * @param {String} markId ID of the mark to delete.
+     */
+    deleteMark: function(markId) {
+        var marks = this.getAllMarks();
+        var newMarks = Ext.Array.filter(marks, function(m) { return m.id !== markId; });
+        if (newMarks.length === marks.length) {
+            Ext.Msg.alert(l('Error'), l('Mark not found.'));
+            return;
+        }
+        this.saveAllMarks(newMarks);
+        this.refreshMarksGrid();
+        if (this.currentMark && this.currentMark.id === markId) {
+            this.currentMark = null;
+            this.showMarkDetails(null);
+        }
+    },
+
+    /**
+     * Refreshes the left grid with marks from localStorage.
+     */
+    refreshMarksGrid: function() {
+        var marks = this.getAllMarks();
+        // Sort by lastFixTime descending (newest first)
+        marks.sort(function(a, b) {
+            return new Date(b.lastFixTime) - new Date(a.lastFixTime);
+        });
+        this.marksGrid.getStore().loadData(marks);
+        // Clear selection if any (but keep currentMark reference? better to clear)
+        this.marksGrid.getSelectionModel().deselectAll();
+        this.currentMark = null;
+        this.showMarkDetails(null);
+    },
+
+    /**
+     * Attempts to center the active PILOT map on given coordinates.
+     * @param {Number} lat Latitude
+     * @param {Number} lon Longitude
+     */
+    centerMapOnCoordinates: function(lat, lon) {
+        // Helper to get active map container (preferred method from AI_SPECS.md)
+        var getActiveMap = function() {
+            if (window.getActiveTabMapContainer && typeof window.getActiveTabMapContainer === 'function') {
+                return window.getActiveTabMapContainer();
+            }
+            return window.mapContainer || null;
+        };
+
+        var map = getActiveMap();
+        if (map && typeof map.setMapCenter === 'function') {
+            map.setMapCenter(lat, lon);
+            // Optionally set zoom to reasonable level
+            if (typeof map.setMapZoom === 'function') {
+                map.setMapZoom(14);
+            }
+        } else {
+            Ext.Msg.alert(l('Map not available'), l('Cannot access the map. Make sure you are in Online or History section.'));
+        }
     }
 });
