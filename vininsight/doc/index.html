@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Расширение VIN Insight – документация</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 40px auto;
+            max-width: 900px;
+            padding: 0 20px;
+            line-height: 1.5;
+            color: #333;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
+        pre {
+            background: #f8f8f8;
+            padding: 15px;
+            border-left: 4px solid #3498db;
+            overflow-x: auto;
+        }
+        .note {
+            background: #e7f3fe;
+            border-left: 4px solid #2196F3;
+            padding: 10px 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+
+<h1>VIN Insight – расшифровка VIN для PILOT</h1>
+
+<p><strong>Версия:</strong> 1.0<br>
+<strong>Автор:</strong> PILOT Extensions Generator<br>
+<strong>Лицензия:</strong> Apache 2.0</p>
+
+<h2>Описание</h2>
+<p>Расширение <strong>VIN Insight</strong> предназначено для получения расшифрованной информации о транспортном средстве по его VIN-номеру с использованием внешнего API <a href="https://auto.dev" target="_blank">auto.dev</a>.</p>
+<p>Особенности:</p>
+<ul>
+    <li>Загрузка реального списка автомобилей из PILOT (<code>/ax/tree.php?vehs=1&state=1</code>).</li>
+    <li>Безопасное хранение API-ключа в <code>localStorage</code> браузера.</li>
+    <li>Отображение основных параметров (марка, модель, год, кузов, двигатель и т.д.) и сырого JSON-ответа.</li>
+    <li>Полная отказоустойчивость – отсутствие VIN или ключа не ломает интерфейс.</li>
+</ul>
+
+<h2>Установка и настройка</h2>
+<ol>
+    <li>Разместите папку расширения на вашем веб-сервере (например, <code>https://your-server.com/vininsight/</code>).</li>
+    <li>Убедитесь, что файл <code>Module.js</code> доступен по URL <code>https://your-server.com/vininsight/Module.js</code>.</li>
+    <li>В интерфейсе PILOT зарегистрируйте расширение, указав:
+        <ul>
+            <li>Имя: <code>vininsight</code></li>
+            <li>Базовый URL: <code>https://your-server.com/vininsight/</code></li>
+        </ul>
+    </li>
+    <li>Если используется прокси для auto.dev, настройте перенаправление запросов с <code>/store/vininsight/autodev/vin/...</code> на <code>https://auto.dev/api/vin/...</code>. Пример для Nginx:
+        <pre>location /store/vininsight/autodev/ {
+    rewrite ^/store/vininsight/autodev/vin/(.*)$ /api/vin/$1 break;
+    proxy_pass https://auto.dev;
+    proxy_set_header Host auto.dev;
+}</pre>
+    </li>
+    <li>После регистрации перезагрузите PILOT – слева появится вкладка «VIN Insight» с иконкой автомобиля.</li>
+</ol>
+
+<h2>Использование</h2>
+<ol>
+    <li>В верхней панели расширения введите ваш API-ключ от auto.dev и нажмите «Сохранить ключ».</li>
+    <li>В левом дереве выберите любое транспортное средство из списка PILOT.</li>
+    <li>Расширение автоматически выполнит запрос к auto.dev и отобразит:
+        <ul>
+            <li>Статус расшифровки,</li>
+            <li>Основные характеристики в секции «Обзор»,</li>
+            <li>Полный JSON-ответ в секции «Сырая расшифровка».</li>
+        </ul>
+    </li>
+    <li>Кнопка «Test API» позволяет проверить работу API на тестовом VIN <code>3GCUDHEL3NG668790</code> без выбора ТС.</li>
+</ol>
+
+<h2>Примечания для разработчиков</h2>
+<div class="note">
+    <strong>Важно:</strong> Расширение полностью соответствует <code>AI_SPECS.md</code>:
+    <ul>
+        <li>Использует <code>Ext.define('Store.vininsight.Module', { extend: 'Ext.Component', ... })</code></li>
+        <li>Метод инициализации – <code>initModule</code> (без глобальной функции)</li>
+        <li>Вкладка добавляется через <code>skeleton.navigation.add()</code> и имеет <code>iconCls: 'fa fa-car'</code></li>
+        <li>Реальные данные загружаются из <code>/ax/tree.php</code> – никаких моков</li>
+        <li><code>doc/index.html</code> содержит исключительно статическую документацию, без скриптов и логики расширения</li>
+    </ul>
+</div>
+
+<h2>Возможные проблемы и их решение</h2>
+<ul>
+    <li><strong>Не загружается список ТС:</strong> проверьте доступность <code>/ax/tree.php?vehs=1&state=1</code> из браузера. Если PILOT работает на другом домене – возможно, потребуется настройка CORS.</li>
+    <li><strong>Расшифровка не работает:</strong> 
+        <ul>
+            <li>Убедитесь, что API-ключ сохранён и активен.</li>
+            <li>Проверьте, что прокси-путь <code>autodev/vin/...</code> правильно перенаправляется на auto.dev (см. пример настройки выше).</li>
+            <li>Откройте вкладку «Сеть» в инструментах разработчика, чтобы увидеть точный HTTP-ответ.</li>
+        </ul>
+    </li>
+    <li><strong>Иконка вкладки не отображается:</strong> PILOT должен подключать Font Awesome 6. Если иконки нет – проверьте, загружается ли шрифт. Можно заменить на стандартную иконку <code>iconCls: 'x-fa fa-car'</code>.</li>
+</ul>
+
+<h2>Файловая структура расширения</h2>
+<pre>
+vininsight/
+├── Module.js          (главный модуль, точка входа)
+├── doc/
+│   └── index.html     (данный файл документации)
+└── index.html         (может отсутствовать или быть копией doc/index.html)
+</pre>
+
+<hr>
+<p>© 2025, PILOT Extensions. Для вопросов обращайтесь к администратору PILOT.</p>
+
+</body>
+</html>
