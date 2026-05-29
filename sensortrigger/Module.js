@@ -1,9 +1,12 @@
 /**
- * Позиция по меткам – версия с корректным отображением точек на карте
+ * Позиция по меткам – версия с отображением точек на карте (иконка fa-podcast)
  */
 
 Ext.define('Store.sensortrigger.Module', {
     extend: 'Ext.Component',
+
+    // Хранилище созданных маркеров (для удаления)
+    triggerMarkers: {},
 
     initModule: function() {
         var me = this;
@@ -19,12 +22,10 @@ Ext.define('Store.sensortrigger.Module', {
             console.log('[sensortrigger] map is ready');
             me.createNavigationTab();
             me.loadVehicles();
-            me.loadTriggerPoints();        // загружает точки из localStorage
+            me.loadTriggerPoints();
             me.createControlPanel();
             me.setupMapClickListener();
             me.addMapButton();
-            // ВАЖНО: после загрузки точек отображаем их на карте
-            me.renderTriggerPointsOnMap();
         });
     },
 
@@ -141,7 +142,7 @@ Ext.define('Store.sensortrigger.Module', {
         return result;
     },
 
-    // -------------------- Точки привязки --------------------
+    // -------------------- Точки привязки (localStorage + маркеры Leaflet) --------------------
     loadTriggerPoints: function() {
         var me = this;
         me.triggerPointsStore = Ext.create('Ext.data.Store', {
@@ -153,9 +154,11 @@ Ext.define('Store.sensortrigger.Module', {
             try {
                 var points = Ext.decode(stored);
                 me.triggerPointsStore.loadData(points);
-                console.log('[sensortrigger] loaded', points.length, 'trigger points from localStorage');
+                console.log('[sensortrigger] loaded', points.length, 'trigger points');
             } catch(e) {}
         }
+        // После загрузки точек отображаем их на карте
+        me.renderAllTriggerMarkers();
     },
 
     saveTriggerPoints: function() {
@@ -164,7 +167,6 @@ Ext.define('Store.sensortrigger.Module', {
             data.push(rec.getData());
         });
         localStorage.setItem('sensortrigger_points', Ext.encode(data));
-        console.log('[sensortrigger] saved', data.length, 'points');
     },
 
     addTriggerPoint: function(sensorId, lat, lon, label) {
@@ -176,82 +178,78 @@ Ext.define('Store.sensortrigger.Module', {
         me.triggerPointsStore.add(record);
         me.saveTriggerPoints();
         me.addTriggerPointMarker(record);
-        Ext.Msg.alert('Успех', 'Точка добавлена');
+        Ext.Msg.alert('Успех', 'Точка добавлена и отмечена на карте');
     },
 
     deleteTriggerPoint: function(record) {
         var me = this;
+        var sensorId = record.get('sensorId');
         me.triggerPointsStore.remove(record);
         me.saveTriggerPoints();
-        me.removeTriggerPointMarker(record.get('sensorId'));
+        me.removeTriggerPointMarker(sensorId);
     },
 
-    // Отрисовка всех сохранённых точек на карте
-    renderTriggerPointsOnMap: function() {
-        var me = this;
-        console.log('[sensortrigger] renderTriggerPointsOnMap, store count:', me.triggerPointsStore.getCount());
-        me.triggerPointsStore.each(function(rec) {
-            me.addTriggerPointMarker(rec);
-        });
-    },
-
-    // Универсальное добавление маркера точки привязки
+    /**
+     * Создаёт кастомный маркер на карте с иконкой fa-podcast
+     * @param {Object} record - запись из store
+     */
     addTriggerPointMarker: function(record) {
-        var map = this.getMap();
-        if (!map) {
-            console.error('[sensortrigger] addTriggerPointMarker: no map');
+        var me = this;
+        var map = me.getMap();
+        if (!map || !map.map) {
+            console.error('[sensortrigger] map not ready, cannot add marker');
             return;
         }
+
         var sensorId = record.get('sensorId');
         var lat = record.get('lat');
         var lon = record.get('lon');
         var label = record.get('label') || sensorId;
-        var markerId = 'trigger_' + sensorId;
 
-        // Сначала пробуем штатный метод MapContainer
-        if (map.addMarker && typeof map.addMarker === 'function') {
-            console.log('[sensortrigger] adding marker via map.addMarker', markerId, lat, lon);
-            map.addMarker({
-                id: markerId,
-                lat: lat,
-                lon: lon,
-                hint: label,
-                // опционально: цвет или иконка
-                icon: L.icon({
-                    iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-                    shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-                    iconSize: [25, 41],
-                    iconAnchor: [12, 41]
-                })
-            });
-        } 
-        // Если нет addMarker, но есть прямой доступ к Leaflet карте
-        else if (map.map && map.map instanceof L.Map) {
-            console.log('[sensortrigger] adding marker directly via Leaflet', markerId, lat, lon);
-            var leafletMap = map.map;
-            // Удаляем старый маркер, если есть
-            if (this.leafletMarkers && this.leafletMarkers[markerId]) {
-                leafletMap.removeLayer(this.leafletMarkers[markerId]);
-            }
-            var marker = L.marker([lat, lon], { title: label }).bindPopup(label);
-            marker.addTo(leafletMap);
-            if (!this.leafletMarkers) this.leafletMarkers = {};
-            this.leafletMarkers[markerId] = marker;
-        } 
-        else {
-            console.error('[sensortrigger] cannot add marker, unknown map API');
-        }
+        // Создаём кастомную иконку Font Awesome
+        var iconHtml = '<i class="fa fa-podcast" style="font-size: 24px; color: #7c3aed; text-shadow: 1px 1px 1px white;"></i>';
+        var customIcon = L.divIcon({
+            html: iconHtml,
+            className: 'sensortrigger-marker-icon',
+            iconSize: [24, 24],
+            popupAnchor: [0, -12]
+        });
+
+        // Создаём маркер Leaflet
+        var marker = L.marker([lat, lon], { icon: customIcon });
+        marker.bindPopup('<b>' + Ext.String.htmlEncode(label) + '</b><br>ID: ' + Ext.String.htmlEncode(sensorId));
+        marker.addTo(map.map);
+
+        // Сохраняем ссылку на маркер для последующего удаления
+        me.triggerMarkers[sensorId] = marker;
+        console.log('[sensortrigger] marker added for', sensorId);
     },
 
     removeTriggerPointMarker: function(sensorId) {
-        var map = this.getMap();
-        var markerId = 'trigger_' + sensorId;
-        if (map && map.removeMarker && typeof map.removeMarker === 'function') {
-            map.removeMarker(markerId);
-        } else if (map && map.map && this.leafletMarkers && this.leafletMarkers[markerId]) {
-            map.map.removeLayer(this.leafletMarkers[markerId]);
-            delete this.leafletMarkers[markerId];
+        var me = this;
+        if (me.triggerMarkers[sensorId]) {
+            me.triggerMarkers[sensorId].remove();
+            delete me.triggerMarkers[sensorId];
+            console.log('[sensortrigger] marker removed for', sensorId);
         }
+    },
+
+    /**
+     * Перерисовывает все маркеры точек привязки (при загрузке или после очистки)
+     */
+    renderAllTriggerMarkers: function() {
+        var me = this;
+        // Удаляем все существующие маркеры
+        for (var id in me.triggerMarkers) {
+            if (me.triggerMarkers.hasOwnProperty(id)) {
+                me.triggerMarkers[id].remove();
+            }
+        }
+        me.triggerMarkers = {};
+        // Добавляем маркеры для каждой точки в store
+        me.triggerPointsStore.each(function(rec) {
+            me.addTriggerPointMarker(rec);
+        });
     },
 
     // -------------------- Правая панель управления --------------------
@@ -374,9 +372,7 @@ Ext.define('Store.sensortrigger.Module', {
         btn.style.cursor = 'pointer';
         btn.style.fontWeight = 'bold';
         btn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
-        btn.onclick = function() {
-            me.startPointSelection();
-        };
+        btn.onclick = function() { me.startPointSelection(); };
 
         var container = map.map._container || map.map.getContainer();
         if (container && container.parentNode) {
@@ -467,7 +463,7 @@ Ext.define('Store.sensortrigger.Module', {
         win.show();
     },
 
-    // -------------------- Симуляция срабатывания --------------------
+    // -------------------- Симуляция триггера --------------------
     showSimulateWindow: function() {
         var me = this;
         if (!me.vehiclesStore || me.vehiclesStore.getCount() === 0) {
@@ -567,17 +563,6 @@ Ext.define('Store.sensortrigger.Module', {
         } else if (map.addMarker) {
             if (map.removeMarker) map.removeMarker(vehid);
             map.addMarker({ id: vehid, lat: lat, lon: lon, hint: 'Vehicle' });
-            return true;
-        } else if (map.map && map.map instanceof L.Map) {
-            // Fallback: напрямую через Leaflet
-            var leafletMap = map.map;
-            if (this.vehicleLeafletMarkers && this.vehicleLeafletMarkers[vehid]) {
-                leafletMap.removeLayer(this.vehicleLeafletMarkers[vehid]);
-            }
-            var newMarker = L.marker([lat, lon]).bindPopup('Vehicle ' + vehid);
-            newMarker.addTo(leafletMap);
-            if (!this.vehicleLeafletMarkers) this.vehicleLeafletMarkers = {};
-            this.vehicleLeafletMarkers[vehid] = newMarker;
             return true;
         }
         return false;
