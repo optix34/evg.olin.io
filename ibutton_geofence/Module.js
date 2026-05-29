@@ -1,71 +1,65 @@
 /**
  * PILOT Extension: iButton GeoFence
  * 
- * Назначение:
- *   - Загружает реальный список ТС из PILOT (/ax/tree.php?vehs=1&state=1)
- *   - Позволяет привязать географическую точку к iButton ID (датчик/ключ)
- *   - При выборе ТС с iButton ID центрирует карту на привязанной точке и показывает маркер
- *   - Управление привязками через localStorage
- * 
- * Полностью соответствует AI_SPECS.md, паттерн 1 (вкладка + главная панель)
+ * Версия: 1.0 (исправленная)
+ * Назначение: привязка географической точки к iButton ID, автоматическое центрирование карты.
+ * Полностью соответствует AI_SPECS.md.
  */
 
 Ext.define('Store.ibutton_geofence.Module', {
     extend: 'Ext.Component',
     singleton: true,
 
-    // Хранилище привязок (кэш)
-    bindings: [],
-    // ID текущего маркера на карте (чтобы удалять)
+    // Идентификатор маркера на карте (для удаления)
     currentMarkerId: 'ibutton_geofence_marker',
 
     /**
      * Главный метод инициализации расширения.
-     * @returns {Ext.panel.Panel} Главная панель
+     * Вызывается PILOT после загрузки Module.js.
+     * @returns {Ext.panel.Panel} Главная панель расширения
      */
     initModule: function() {
         var me = this;
-        
+
         // Загружаем привязки из localStorage
-        me.loadBindings();
-        
-        // Создаём главную панель (правую часть)
+        me.bindings = me.loadBindings();
+
+        // Создаём главную панель (будет показана справа)
         var mainPanel = me.createMainPanel();
-        
-        // Создаём вкладку навигации (левую часть)
+
+        // Создаём вкладку навигации (слева)
         var navTab = me.createNavTab(mainPanel);
-        
+
         // Добавляем вкладку в левую навигацию PILOT
         if (window.skeleton && window.skeleton.navigation) {
             window.skeleton.navigation.add(navTab);
         } else {
-            console.warn('iButton GeoFence: skeleton.navigation не найден');
+            console.warn('ibutton_geofence: skeleton.navigation не найден');
         }
-        
-        // Добавляем главную панель в mapframe (если есть)
+
+        // Добавляем главную панель в mapframe PILOT (если требуется)
         if (window.skeleton && window.skeleton.mapframe) {
             window.skeleton.mapframe.add(mainPanel);
-        } else {
-            console.warn('iButton GeoFence: skeleton.mapframe не найден');
         }
-        
+
+        // Возвращаем главную панель – PILOT покажет её при активации расширения
         return mainPanel;
     },
 
     /**
      * Загружает привязки из localStorage
+     * @returns {Array}
      */
     loadBindings: function() {
         var stored = localStorage.getItem('ibutton_geofence_bindings');
         if (stored) {
             try {
-                this.bindings = Ext.decode(stored);
+                return Ext.decode(stored);
             } catch(e) {
-                this.bindings = [];
+                return [];
             }
-        } else {
-            this.bindings = [];
         }
+        return [];
     },
 
     /**
@@ -76,7 +70,7 @@ Ext.define('Store.ibutton_geofence.Module', {
     },
 
     /**
-     * Возвращает привязку для указанного iButton ID или null
+     * Возвращает привязку по iButton ID или null
      * @param {string} ibuttonId
      * @returns {Object|null}
      */
@@ -126,8 +120,8 @@ Ext.define('Store.ibutton_geofence.Module', {
             Ext.Msg.alert('Ошибка', 'Карта онлайн недоступна');
             return;
         }
-        
-        // Центрируем карту
+
+        // Центрирование карты
         if (map.setMapCenter) {
             map.setMapCenter(lat, lon);
         } else if (map.map && map.map.setView) {
@@ -136,12 +130,11 @@ Ext.define('Store.ibutton_geofence.Module', {
             Ext.Msg.alert('Ошибка', 'Не удалось центрировать карту');
             return;
         }
-        
-        // Удаляем старый маркер, если есть
+
+        // Удаление старого маркера
         if (map.removeMarker) {
             map.removeMarker(this.currentMarkerId);
         } else if (map.map && map.map.eachLayer) {
-            // Прямой доступ к Leaflet (осторожно)
             var markerToRemove = null;
             map.map.eachLayer(function(layer) {
                 if (layer.options && layer.options.id === this.currentMarkerId) {
@@ -152,8 +145,8 @@ Ext.define('Store.ibutton_geofence.Module', {
                 map.map.removeLayer(markerToRemove);
             }
         }
-        
-        // Добавляем новый маркер
+
+        // Добавление нового маркера
         var markerOptions = {
             id: this.currentMarkerId,
             lat: lat,
@@ -163,12 +156,12 @@ Ext.define('Store.ibutton_geofence.Module', {
         if (map.addMarker) {
             map.addMarker(markerOptions);
         } else if (map.map && L && L.marker) {
-            // Fallback: создаём маркер через Leaflet напрямую
             var leafletMarker = L.marker([lat, lon], { title: markerOptions.hint });
             leafletMarker.options.id = markerOptions.id;
             leafletMarker.addTo(map.map);
         } else {
-            Ext.Msg.alert('Предупреждение', 'Маркер не добавлен (метод addMarker отсутствует)');
+            // Не критично, просто предупреждение
+            console.warn('ibutton_geofence: не удалось добавить маркер');
         }
     },
 
@@ -179,8 +172,8 @@ Ext.define('Store.ibutton_geofence.Module', {
      */
     createNavTab: function(mainPanel) {
         var me = this;
-        
-        // Store для загрузки ТС из PILOT
+
+        // TreeStore для загрузки ТС из PILOT
         var vehiclesStore = Ext.create('Ext.data.TreeStore', {
             proxy: {
                 type: 'ajax',
@@ -192,19 +185,10 @@ Ext.define('Store.ibutton_geofence.Module', {
             },
             root: {
                 text: 'Транспортные средства',
-                expanded: true,
-                children: []
-            },
-            listeners: {
-                load: function(store, records, successful) {
-                    if (!successful) {
-                        Ext.Msg.alert('Ошибка', 'Не удалось загрузить список ТС из PILOT');
-                    }
-                }
+                expanded: true
             }
         });
-        
-        // Дерево с колонками
+
         var treePanel = Ext.create('Ext.tree.Panel', {
             title: 'Список ТС',
             store: vehiclesStore,
@@ -218,26 +202,25 @@ Ext.define('Store.ibutton_geofence.Module', {
             listeners: {
                 selectionchange: function(tree, selected) {
                     if (selected && selected.length > 0) {
-                        var record = selected[0];
-                        me.onVehicleSelected(record, mainPanel);
+                        me.onVehicleSelected(selected[0], mainPanel);
                     }
                 }
             }
         });
-        
+
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'iButton GeoFence',
             iconCls: 'fa fa-key',
             layout: 'fit',
             items: [treePanel],
-            map_frame: mainPanel   // связь с главной панелью (паттерн 1)
+            map_frame: mainPanel   // Обязательная связь для паттерна 1
         });
-        
+
         return navTab;
     },
 
     /**
-     * Обработчик выбора ТС из дерева
+     * Обработчик выбора ТС
      * @param {Ext.data.Model} record
      * @param {Ext.panel.Panel} mainPanel
      */
@@ -245,14 +228,14 @@ Ext.define('Store.ibutton_geofence.Module', {
         var me = this;
         var ibuttonId = record.get('ibutton');
         var vehicleName = record.get('name') || record.get('text') || '—';
-        
+
         // Обновляем информационную панель
         var infoPanel = mainPanel.infoPanel;
         if (infoPanel) {
             infoPanel.down('displayfield[name=vehicleName]').setValue(vehicleName);
             infoPanel.down('displayfield[name=ibuttonId]').setValue(ibuttonId || '—');
         }
-        
+
         if (!ibuttonId) {
             if (infoPanel) {
                 infoPanel.down('displayfield[name=status]').setValue('Нет iButton ID');
@@ -260,18 +243,21 @@ Ext.define('Store.ibutton_geofence.Module', {
             Ext.Msg.alert('Информация', 'У выбранного ТС нет iButton ID');
             return;
         }
-        
+
         var binding = me.getBindingByIbuttonId(ibuttonId);
         if (binding) {
+            var statusText = 'Точка найдена: ' + binding.lat + ', ' + binding.lon +
+                             (binding.description ? ' (' + binding.description + ')' : '');
             if (infoPanel) {
-                infoPanel.down('displayfield[name=status]').setValue(
-                    'Точка найдена: ' + binding.lat + ', ' + binding.lon + ' (' + (binding.description || 'без описания') + ')'
-                );
+                infoPanel.down('displayfield[name=status]').setValue(statusText);
+                // Сохраняем координаты в специальное поле для кнопки "Показать на карте"
+                infoPanel.currentCoords = { lat: binding.lat, lon: binding.lon, desc: binding.description };
             }
             me.showPointOnMap(binding.lat, binding.lon, binding.description);
         } else {
             if (infoPanel) {
                 infoPanel.down('displayfield[name=status]').setValue('Точка не задана');
+                infoPanel.currentCoords = null;
             }
             Ext.Msg.alert('Информация', 'Для iButton ID ' + ibuttonId + ' точка не задана');
         }
@@ -283,15 +269,15 @@ Ext.define('Store.ibutton_geofence.Module', {
      */
     createMainPanel: function() {
         var me = this;
-        
-        // ---- Грид для списка привязок ----
+
+        // Store для грида привязок
         var bindingsStore = Ext.create('Ext.data.ArrayStore', {
             fields: ['ibuttonId', 'lat', 'lon', 'description'],
             data: me.bindings.map(function(b) {
                 return [b.ibuttonId, b.lat, b.lon, b.description];
             })
         });
-        
+
         var bindingsGrid = Ext.create('Ext.grid.Panel', {
             title: 'Привязки iButton → точка',
             store: bindingsStore,
@@ -318,8 +304,7 @@ Ext.define('Store.ibutton_geofence.Module', {
                             Ext.Msg.alert('Ошибка', 'Выберите привязку для редактирования');
                             return;
                         }
-                        var record = selected[0];
-                        me.showBindingForm(record, bindingsStore);
+                        me.showBindingForm(selected[0], bindingsStore);
                     }
                 },
                 {
@@ -343,8 +328,8 @@ Ext.define('Store.ibutton_geofence.Module', {
                 }
             ]
         });
-        
-        // ---- Информационная панель ----
+
+        // Информационная панель с выводом данных о выбранном ТС
         var infoPanel = Ext.create('Ext.panel.Panel', {
             title: 'Информация о выбранном ТС',
             layout: 'anchor',
@@ -357,17 +342,10 @@ Ext.define('Store.ibutton_geofence.Module', {
                 {
                     xtype: 'button',
                     text: 'Показать на карте',
-                    handler: function() {
-                        var statusVal = infoPanel.down('displayfield[name=status]').getValue();
-                        // Извлекаем координаты из строки статуса (формат "Точка найдена: 55.75, 37.62 (...)")
-                        var match = statusVal.match(/Точка найдена:\s*([\d\.\-]+),\s*([\d\.\-]+)/);
-                        if (match) {
-                            var lat = parseFloat(match[1]);
-                            var lon = parseFloat(match[2]);
-                            var desc = '';
-                            var descMatch = statusVal.match(/\((.+)\)/);
-                            if (descMatch) desc = descMatch[1];
-                            me.showPointOnMap(lat, lon, desc);
+                    handler: function(btn) {
+                        var panel = btn.up('panel');
+                        if (panel.currentCoords) {
+                            me.showPointOnMap(panel.currentCoords.lat, panel.currentCoords.lon, panel.currentCoords.desc);
                         } else {
                             Ext.Msg.alert('Ошибка', 'Нет координат для отображения (привязка не найдена)');
                         }
@@ -375,35 +353,25 @@ Ext.define('Store.ibutton_geofence.Module', {
                 }
             ]
         });
-        
+        infoPanel.currentCoords = null;
+
         var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: 'border',
             items: [
-                {
-                    region: 'center',
-                    layout: 'fit',
-                    title: 'Управление привязками',
-                    items: [bindingsGrid]
-                },
-                {
-                    region: 'south',
-                    layout: 'fit',
-                    height: 150,
-                    split: true,
-                    items: [infoPanel]
-                }
+                { region: 'center', layout: 'fit', title: 'Управление привязками', items: [bindingsGrid] },
+                { region: 'south', layout: 'fit', height: 180, split: true, items: [infoPanel] }
             ]
         });
-        
-        // Сохраняем ссылки для доступа из обработчиков
+
+        // Сохраняем ссылки для доступа из других методов
         mainPanel.infoPanel = infoPanel;
         mainPanel.bindingsStore = bindingsStore;
-        
+
         return mainPanel;
     },
 
     /**
-     * Показывает форму добавления/редактирования привязки
+     * Показывает окно добавления/редактирования привязки
      * @param {Ext.data.Model|null} record
      * @param {Ext.data.Store} store
      */
@@ -421,54 +389,64 @@ Ext.define('Store.ibutton_geofence.Module', {
             lon: '',
             description: ''
         };
-        
+
         var win = Ext.create('Ext.window.Window', {
             title: isEdit ? 'Редактировать привязку' : 'Добавить привязку',
             modal: true,
-            width: 400,
+            width: 420,
             layout: 'anchor',
-            defaults: { anchor: '100%', margin: '5' },
+            defaults: { anchor: '100%', margin: 5 },
             items: [
                 { xtype: 'textfield', fieldLabel: 'iButton ID', name: 'ibuttonId', value: formValues.ibuttonId, allowBlank: false },
                 { xtype: 'numberfield', fieldLabel: 'Широта', name: 'lat', value: formValues.lat, step: 0.000001, allowBlank: false },
                 { xtype: 'numberfield', fieldLabel: 'Долгота', name: 'lon', value: formValues.lon, step: 0.000001, allowBlank: false },
                 { xtype: 'textfield', fieldLabel: 'Описание', name: 'description', value: formValues.description }
             ],
-            buttons: [{
-                text: 'Сохранить',
-                handler: function(btn) {
-                    var form = btn.up('window').down('form');
-                    var values = form.getValues();
-                    if (!values.ibuttonId || values.lat === '' || values.lon === '') {
-                        Ext.Msg.alert('Ошибка', 'Заполните все обязательные поля');
-                        return;
+            buttons: [
+                {
+                    text: 'Сохранить',
+                    handler: function(btn) {
+                        var form = btn.up('window');
+                        var ibuttonIdField = form.down('textfield[name=ibuttonId]');
+                        var latField = form.down('numberfield[name=lat]');
+                        var lonField = form.down('numberfield[name=lon]');
+                        var descField = form.down('textfield[name=description]');
+
+                        var ibuttonId = ibuttonIdField.getValue();
+                        var lat = latField.getValue();
+                        var lon = lonField.getValue();
+                        var description = descField.getValue();
+
+                        if (!ibuttonId || lat === '' || lon === '' || lat === null || lon === null) {
+                            Ext.Msg.alert('Ошибка', 'Заполните все обязательные поля');
+                            return;
+                        }
+
+                        var binding = {
+                            ibuttonId: ibuttonId,
+                            lat: parseFloat(lat),
+                            lon: parseFloat(lon),
+                            description: description || ''
+                        };
+                        me.saveBinding(binding);
+
+                        if (isEdit) {
+                            record.set('ibuttonId', binding.ibuttonId);
+                            record.set('lat', binding.lat);
+                            record.set('lon', binding.lon);
+                            record.set('description', binding.description);
+                            record.commit();
+                        } else {
+                            store.add([binding.ibuttonId, binding.lat, binding.lon, binding.description]);
+                        }
+                        store.commitChanges();
+
+                        win.close();
+                        Ext.Msg.alert('Готово', 'Привязка сохранена');
                     }
-                    // Сохраняем в localStorage и обновляем store
-                    var binding = {
-                        ibuttonId: values.ibuttonId,
-                        lat: parseFloat(values.lat),
-                        lon: parseFloat(values.lon),
-                        description: values.description || ''
-                    };
-                    me.saveBinding(binding);
-                    
-                    // Обновляем грид
-                    if (isEdit) {
-                        record.set('ibuttonId', binding.ibuttonId);
-                        record.set('lat', binding.lat);
-                        record.set('lon', binding.lon);
-                        record.set('description', binding.description);
-                    } else {
-                        store.add([binding.ibuttonId, binding.lat, binding.lon, binding.description]);
-                    }
-                    store.commitChanges();
-                    win.close();
-                    Ext.Msg.alert('Готово', 'Привязка сохранена');
-                }
-            }, {
-                text: 'Отмена',
-                handler: function() { win.close(); }
-            }]
+                },
+                { text: 'Отмена', handler: function() { win.close(); } }
+            ]
         });
         win.show();
     }
