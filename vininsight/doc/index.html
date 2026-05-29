@@ -1,128 +1,383 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Расширение VIN Insight – документация</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIN Insight - PILOT Extension Documentation</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 40px auto;
-            max-width: 900px;
-            padding: 0 20px;
-            line-height: 1.5;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
             color: #333;
+            background-color: #f5f7fa;
         }
-        h1, h2, h3 {
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 40px 0;
+            margin-bottom: 40px;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .header-icon {
+            font-size: 48px;
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 50%;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+        
+        .tagline {
+            font-size: 1.2em;
+            opacity: 0.9;
+            font-weight: 300;
+        }
+        
+        .content {
+            background: white;
+            border-radius: 10px;
+            padding: 40px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+        
+        h2 {
             color: #2c3e50;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+            font-weight: 400;
         }
-        code {
-            background: #f4f4f4;
-            padding: 2px 5px;
-            border-radius: 4px;
-            font-family: 'Consolas', 'Courier New', monospace;
+        
+        h3 {
+            color: #3498db;
+            margin: 25px 0 15px 0;
+            font-weight: 500;
         }
-        pre {
-            background: #f8f8f8;
-            padding: 15px;
+        
+        p {
+            margin-bottom: 15px;
+        }
+        
+        ul, ol {
+            margin-left: 25px;
+            margin-bottom: 20px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        .card {
+            background: #f8fafc;
             border-left: 4px solid #3498db;
-            overflow-x: auto;
-        }
-        .note {
-            background: #e7f3fe;
-            border-left: 4px solid #2196F3;
-            padding: 10px 15px;
+            padding: 20px;
             margin: 20px 0;
+            border-radius: 0 5px 5px 0;
+        }
+        
+        .info-box {
+            background: #e8f4fc;
+            border: 1px solid #b3e0ff;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 25px 0;
+        }
+        
+        .feature-item {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e1e8f0;
+        }
+        
+        .feature-icon {
+            color: #3498db;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        code {
+            background: #f1f3f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        pre {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 20px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            color: #7f8c8d;
+            font-size: 0.9em;
+            border-top: 1px solid #e1e8f0;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .content {
+                padding: 25px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
         }
     </style>
 </head>
 <body>
-
-<h1>VIN Insight – расшифровка VIN для PILOT</h1>
-
-<p><strong>Версия:</strong> 1.0<br>
-<strong>Автор:</strong> PILOT Extensions Generator<br>
-<strong>Лицензия:</strong> Apache 2.0</p>
-
-<h2>Описание</h2>
-<p>Расширение <strong>VIN Insight</strong> предназначено для получения расшифрованной информации о транспортном средстве по его VIN-номеру с использованием внешнего API <a href="https://auto.dev" target="_blank">auto.dev</a>.</p>
-<p>Особенности:</p>
-<ul>
-    <li>Загрузка реального списка автомобилей из PILOT (<code>/ax/tree.php?vehs=1&state=1</code>).</li>
-    <li>Безопасное хранение API-ключа в <code>localStorage</code> браузера.</li>
-    <li>Отображение основных параметров (марка, модель, год, кузов, двигатель и т.д.) и сырого JSON-ответа.</li>
-    <li>Полная отказоустойчивость – отсутствие VIN или ключа не ломает интерфейс.</li>
-</ul>
-
-<h2>Установка и настройка</h2>
-<ol>
-    <li>Разместите папку расширения на вашем веб-сервере (например, <code>https://your-server.com/vininsight/</code>).</li>
-    <li>Убедитесь, что файл <code>Module.js</code> доступен по URL <code>https://your-server.com/vininsight/Module.js</code>.</li>
-    <li>В интерфейсе PILOT зарегистрируйте расширение, указав:
-        <ul>
-            <li>Имя: <code>vininsight</code></li>
-            <li>Базовый URL: <code>https://your-server.com/vininsight/</code></li>
-        </ul>
-    </li>
-    <li>Если используется прокси для auto.dev, настройте перенаправление запросов с <code>/store/vininsight/autodev/vin/...</code> на <code>https://auto.dev/api/vin/...</code>. Пример для Nginx:
-        <pre>location /store/vininsight/autodev/ {
-    rewrite ^/store/vininsight/autodev/vin/(.*)$ /api/vin/$1 break;
-    proxy_pass https://auto.dev;
-    proxy_set_header Host auto.dev;
-}</pre>
-    </li>
-    <li>После регистрации перезагрузите PILOT – слева появится вкладка «VIN Insight» с иконкой автомобиля.</li>
-</ol>
-
-<h2>Использование</h2>
-<ol>
-    <li>В верхней панели расширения введите ваш API-ключ от auto.dev и нажмите «Сохранить ключ».</li>
-    <li>В левом дереве выберите любое транспортное средство из списка PILOT.</li>
-    <li>Расширение автоматически выполнит запрос к auto.dev и отобразит:
-        <ul>
-            <li>Статус расшифровки,</li>
-            <li>Основные характеристики в секции «Обзор»,</li>
-            <li>Полный JSON-ответ в секции «Сырая расшифровка».</li>
-        </ul>
-    </li>
-    <li>Кнопка «Test API» позволяет проверить работу API на тестовом VIN <code>3GCUDHEL3NG668790</code> без выбора ТС.</li>
-</ol>
-
-<h2>Примечания для разработчиков</h2>
-<div class="note">
-    <strong>Важно:</strong> Расширение полностью соответствует <code>AI_SPECS.md</code>:
-    <ul>
-        <li>Использует <code>Ext.define('Store.vininsight.Module', { extend: 'Ext.Component', ... })</code></li>
-        <li>Метод инициализации – <code>initModule</code> (без глобальной функции)</li>
-        <li>Вкладка добавляется через <code>skeleton.navigation.add()</code> и имеет <code>iconCls: 'fa fa-car'</code></li>
-        <li>Реальные данные загружаются из <code>/ax/tree.php</code> – никаких моков</li>
-        <li><code>doc/index.html</code> содержит исключительно статическую документацию, без скриптов и логики расширения</li>
-    </ul>
-</div>
-
-<h2>Возможные проблемы и их решение</h2>
-<ul>
-    <li><strong>Не загружается список ТС:</strong> проверьте доступность <code>/ax/tree.php?vehs=1&state=1</code> из браузера. Если PILOT работает на другом домене – возможно, потребуется настройка CORS.</li>
-    <li><strong>Расшифровка не работает:</strong> 
-        <ul>
-            <li>Убедитесь, что API-ключ сохранён и активен.</li>
-            <li>Проверьте, что прокси-путь <code>autodev/vin/...</code> правильно перенаправляется на auto.dev (см. пример настройки выше).</li>
-            <li>Откройте вкладку «Сеть» в инструментах разработчика, чтобы увидеть точный HTTP-ответ.</li>
-        </ul>
-    </li>
-    <li><strong>Иконка вкладки не отображается:</strong> PILOT должен подключать Font Awesome 6. Если иконки нет – проверьте, загружается ли шрифт. Можно заменить на стандартную иконку <code>iconCls: 'x-fa fa-car'</code>.</li>
-</ul>
-
-<h2>Файловая структура расширения</h2>
-<pre>
-vininsight/
-├── Module.js          (главный модуль, точка входа)
-├── doc/
-│   └── index.html     (данный файл документации)
-└── index.html         (может отсутствовать или быть копией doc/index.html)
-</pre>
-
-<hr>
-<p>© 2025, PILOT Extensions. Для вопросов обращайтесь к администратору PILOT.</p>
-
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="header-icon">🚗</div>
+                <div>
+                    <h1>VIN Insight Extension</h1>
+                    <p class="tagline">Enrich PILOT vehicle data with VIN decode information</p>
+                </div>
+            </div>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="content">
+            <h2>Overview</h2>
+            <p>The <strong>VIN Insight</strong> extension enhances PILOT's vehicle management capabilities by integrating VIN (Vehicle Identification Number) decoding functionality directly into the PILOT interface. This extension allows fleet managers to access detailed vehicle specifications and information by decoding VINs using the auto.dev API.</p>
+            
+            <div class="card">
+                <p><strong>Purpose:</strong> Provide VIN decoding capabilities within PILOT to enrich vehicle data with manufacturer specifications, model details, and technical information.</p>
+            </div>
+            
+            <h2>Key Features</h2>
+            
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <div class="feature-icon">📋</div>
+                    <h3>Vehicle Tree View</h3>
+                    <p>Displays all vehicles from your PILOT account in a hierarchical tree structure with columns for name, VIN, model, and year.</p>
+                </div>
+                
+                <div class="feature-item">
+                    <div class="feature-icon">🔍</div>
+                    <h3>VIN Decoding</h3>
+                    <p>Decode VINs to access comprehensive vehicle data including make, model, year, engine specifications, and more.</p>
+                </div>
+                
+                <div class="feature-item">
+                    <div class="feature-icon">⚙️</div>
+                    <h3>API Configuration</h3>
+                    <p>Easy setup with auto.dev API key management stored securely in browser localStorage.</p>
+                </div>
+                
+                <div class="feature-item">
+                    <div class="feature-icon">📊</div>
+                    <h3>Detailed Views</h3>
+                    <p>Organized presentation of decoded information in both formatted overview and raw JSON views.</p>
+                </div>
+            </div>
+            
+            <h2>Getting Started</h2>
+            
+            <h3>1. Installation</h3>
+            <p>The extension is automatically loaded by PILOT when activated. No manual installation is required.</p>
+            
+            <h3>2. API Key Setup</h3>
+            <p>To use the VIN decoding functionality, you need an API key from auto.dev:</p>
+            <ol>
+                <li>Visit the <a href="https://docs.auto.dev/v2/products/vin-decode" target="_blank">auto.dev VIN Decode documentation</a></li>
+                <li>Sign up for an API key (if you don't have one)</li>
+                <li>Navigate to the "Settings" tab in the VIN Insight extension</li>
+                <li>Enter your API key in the provided field</li>
+                <li>Click "Save" to store the key</li>
+            </ol>
+            
+            <div class="info-box">
+                <p><strong>Note:</strong> The API key is stored locally in your browser's localStorage. It will persist between sessions but is specific to the browser and device you're using.</p>
+            </div>
+            
+            <h3>3. Testing the Connection</h3>
+            <p>After entering your API key, use the "Test API Connection" button in the Settings tab to verify that your API key is valid and the service is accessible.</p>
+            
+            <h2>Using the Extension</h2>
+            
+            <h3>Navigation</h3>
+            <p>The extension adds a new tab titled "VIN Insight" to the left navigation panel with a car icon (<code>fa fa-car</code>). This tab contains:</p>
+            <ul>
+                <li>A tree view of all vehicles in your PILOT account</li>
+                <li>Columns showing vehicle name, VIN, model, and year</li>
+            </ul>
+            
+            <h3>Vehicle Selection</h3>
+            <p>Click any vehicle in the tree to:</p>
+            <ul>
+                <li>See basic vehicle information in the Overview tab</li>
+                <li>Have the option to decode its VIN</li>
+                <li>View previously decoded information if available</li>
+            </ul>
+            
+            <h3>VIN Decoding Process</h3>
+            <ol>
+                <li>Select a vehicle from the tree</li>
+                <li>Click the "Decode VIN" button in the Overview tab</li>
+                <li>The extension will:
+                    <ul>
+                        <li>Check for a valid API key</li>
+                        <li>Send the VIN to the auto.dev API via PILOT's proxy</li>
+                        <li>Display decoding status (Decoding/Decoded/Error)</li>
+                        <li>Show decoded information when complete</li>
+                    </ul>
+                </li>
+            </ol>
+            
+            <div class="warning-box">
+                <p><strong>Important:</strong> VIN decoding requires an internet connection and a valid API key. If either is missing, the decode will fail with an appropriate error message.</p>
+            </div>
+            
+            <h3>Tab Organization</h3>
+            <p>The main content area has three tabs:</p>
+            <ul>
+                <li><strong>Overview:</strong> Basic vehicle info and decoded fields in a readable format</li>
+                <li><strong>Raw Decode:</strong> Complete JSON response from the API for technical users</li>
+                <li><strong>Settings:</strong> API key management and connection testing</li>
+            </ul>
+            
+            <h2>Data Sources</h2>
+            
+            <h3>1. PILOT Vehicle Data</h3>
+            <p>Vehicle information is loaded directly from PILOT using the standard API endpoint:</p>
+            <pre>GET /ax/tree.php?vehs=1&state=1</pre>
+            <p>The extension processes the hierarchical response to extract individual vehicles from groups/folders.</p>
+            
+            <h3>2. Auto.dev VIN Decode API</h3>
+            <p>VIN decoding is performed using the auto.dev API via PILOT's proxy:</p>
+            <pre>GET /autodev/vin/{VIN}?apiKey={API_KEY}</pre>
+            <p>This provides comprehensive vehicle data including manufacturer specifications, model details, and technical information.</p>
+            
+            <h2>Technical Implementation</h2>
+            
+            <h3>Architecture</h3>
+            <p>The extension follows PILOT's Pattern 1 architecture:</p>
+            <ul>
+                <li><strong>Navigation Tab:</strong> Left panel component with vehicle tree</li>
+                <li><strong>Main Panel:</strong> Right content area with tabbed interface</li>
+                <li><strong>Linkage:</strong> Properly linked using <code>navTab.map_frame = mainPanel</code></li>
+            </ul>
+            
+            <h3>Error Handling</h3>
+            <p>The extension includes comprehensive error handling:</p>
+            <ul>
+                <li>Missing API key detection with user guidance</li>
+                <li>Invalid VIN handling with clear error messages</li>
+                <li>Network failure handling with retry guidance</li>
+                <li>API response parsing errors with fallback display</li>
+            </ul>
+            
+            <h3>Data Persistence</h3>
+            <p>The API key is stored in <code>localStorage</code> under the key <code>vininsight_apikey</code>. This provides persistence across browser sessions without requiring server-side storage.</p>
+            
+            <h2>Troubleshooting</h2>
+            
+            <h3>Common Issues</h3>
+            
+            <p><strong>No vehicles appear in the tree:</strong></p>
+            <ul>
+                <li>Verify you have vehicles in your PILOT account</li>
+                <li>Check that the vehicles have VINs assigned</li>
+                <li>Ensure you have proper permissions to view vehicle data</li>
+            </ul>
+            
+            <p><strong>VIN decode fails:</strong></p>
+            <ul>
+                <li>Verify your API key is entered correctly in Settings</li>
+                <li>Test the API connection using the test button</li>
+                <li>Check that the VIN is valid and properly formatted</li>
+                <li>Ensure you have internet connectivity</li>
+                <li>Verify your auto.dev account has remaining API credits</li>
+            </ul>
+            
+            <p><strong>Extension doesn't load:</strong></p>
+            <ul>
+                <li>Verify the extension is properly registered in PILOT admin</li>
+                <li>Check browser console for JavaScript errors</li>
+                <li>Ensure you're using a supported browser (Chrome, Firefox, Edge)</li>
+            </ul>
+            
+            <h2>Security & Privacy</h2>
+            
+            <div class="info-box">
+                <p><strong>API Key Security:</strong> Your auto.dev API key is stored only in your browser's localStorage. It is never transmitted to PILOT servers (only to auto.dev via proxy for VIN decoding).</p>
+            </div>
+            
+            <div class="info-box">
+                <p><strong>Data Usage:</strong> VINs are only sent to auto.dev when you explicitly click "Decode VIN". Decoded information is displayed locally but not stored in PILOT's database.</p>
+            </div>
+            
+            <h2>Support</h2>
+            
+            <p>For technical issues with the extension, contact your PILOT administrator or the extension developer.</p>
+            
+            <p>For issues with the auto.dev API service, including account management and billing, visit <a href="https://docs.auto.dev" target="_blank">auto.dev documentation</a>.</p>
+        </div>
+        
+        <footer>
+            <p>VIN Insight Extension | Version 1.0 | Compatible with PILOT Extensions Framework</p>
+            <p>This documentation was generated on December 24, 2025</p>
+        </footer>
+    </div>
 </body>
 </html>
