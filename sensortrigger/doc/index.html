@@ -2,66 +2,102 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sensor Trigger Extension – Documentation</title>
+    <title>Marks Manager Extension Documentation</title>
     <style>
-        body { font-family: sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
-        h1, h2 { color: #1e293b; }
-        code { background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; }
-        pre { background: #f8fafc; padding: 1rem; overflow-x: auto; border-radius: 8px; }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1, h2 {
+            color: #2c3e50;
+        }
+        .badge {
+            background-color: #3498db;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: inline-block;
+            font-size: 14px;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        ul {
+            margin: 10px 0;
+        }
+        .note {
+            background: #e7f3fe;
+            border-left: 4px solid #2196F3;
+            padding: 10px;
+            margin: 15px 0;
+        }
     </style>
 </head>
 <body>
-    <h1>Sensor Trigger Map Move Extension</h1>
-    <p><strong>Version:</strong> 1.0.0</p>
-    <p><strong>Author:</strong> PILOT Extensions AI</p>
-
-    <h2>Purpose</h2>
-    <p>This extension allows PILOT users to define trigger points on the map associated with specific sensor IDs. When a vehicle’s sensor (simulated for demo) triggers, the vehicle icon moves to the predefined point – useful for geofencing alerts, maintenance actions, or automated responses.</p>
+    <h1>📌 Marks Manager Extension for PILOT</h1>
+    <p><span class="badge">Version 1.0</span> <span class="badge" style="background-color:#27ae60;">localStorage</span></p>
+    
+    <h2>Overview</h2>
+    <p>The <strong>Marks Manager</strong> extension allows PILOT users to create, store, and manage custom marks (bookmarks) associated with vehicles from the PILOT system.  
+    Marks are saved locally in your browser's <code>localStorage</code> and persist across sessions.</p>
 
     <h2>Features</h2>
     <ul>
-        <li>Displays real vehicles loaded from PILOT (<code>/ax/tree.php?vehs=1&state=1</code>).</li>
-        <li>Left navigation tab with vehicle grid (name, VIN, model, year).</li>
-        <li>Right floating panel with:
-            <ul>
-                <li>Toolbar: "Add Trigger Point" and "Simulate Trigger".</li>
-                <li>List of saved trigger points (edit/delete).</li>
-                <li>Event log showing trigger actions.</li>
-            </ul>
-        </li>
-        <li>Click on map to set coordinates when adding a trigger point.</li>
-        <li>Trigger points stored in <code>localStorage</code> (persistent across reloads).</li>
-        <li>Simulate trigger: pick a vehicle and a sensor ID → vehicle marker moves to the matching trigger point.</li>
-        <li>Demo sensors: each vehicle has mock sensors (<code>engine_temp</code>, <code>fuel_level</code>, <code>door_status</code>) for illustration.</li>
+        <li>✅ Load real vehicles from PILOT (<code>/ax/tree.php</code>)</li>
+        <li>✅ Add new marks with unique ID, vehicle association, description, and coordinates</li>
+        <li>✅ Edit and delete existing marks</li>
+        <li>✅ View mark details in the main panel</li>
+        <li>✅ Optional “Show on Map” button centers the PILOT map on the mark location</li>
+        <li>✅ Stores last fix time (creation/update timestamp)</li>
+        <li>✅ Fully client‑side – no backend required</li>
     </ul>
 
-    <h2>How to Replace Simulation with Real Sensor Events</h2>
-    <p>The extension is designed for easy integration with real sensor APIs. In <code>Module.js</code>, locate the function <code>simulateTrigger(vehicleId, sensorId)</code>. Replace the call to this function with a real-time event listener (e.g., WebSocket, polling) that calls the same method:</p>
-    <pre><code>// Inside your real-time event handler:
-var extension = Ext.ClassManager.get('Store.sensortrigger.Module');
-if (extension && extension.moveVehicleOnSensor) {
-    extension.moveVehicleOnSensor(vehicleId, sensorId);
-}</code></pre>
-    <p>The method <code>moveVehicleOnSensor(vehicleId, sensorId)</code> checks for a stored trigger point with <code>sensorId</code> and moves the vehicle marker.</p>
-
-    <h2>Installation & Verification</h2>
+    <h2>How to Use</h2>
     <ol>
-        <li>Upload the <code>sensortrigger/</code> folder to a public HTTPS host (Cloudflare Pages, GitHub Pages, etc.).</li>
-        <li>Ensure <code>https://your-host.com/sensortrigger/Module.js</code> is accessible directly in a browser.</li>
-        <li>In PILOT admin, register the extension with name <code>sensortrigger</code> and base URL <code>https://your-host.com/sensortrigger/</code>.</li>
-        <li>Reload PILOT – a new tab "Позиция по метки" appears in the left navigation and a control panel on the right side of the map.</li>
+        <li><strong>Add a Mark</strong>: Click the “Add Mark” button in the left panel, fill in the ID, select a vehicle from the dropdown, enter description and coordinates (lat/lon), then save.</li>
+        <li><strong>View Details</strong>: Click any row in the left grid – its details will appear on the right panel.</li>
+        <li><strong>Update</strong>: Select a mark, then click “Update” to edit its fields. The Mark ID cannot be changed after creation.</li>
+        <li><strong>Delete</strong>: Select a mark, then click “Delete” and confirm removal.</li>
+        <li><strong>Show on Map</strong>: If you are in the Online or History section, click “Show on Map” to center the map on the mark's coordinates (requires active map).</li>
     </ol>
 
-    <h2>Limitations / Notes</h2>
-    <ul>
-        <li>The extension uses the existing Online map (<code>window.mapContainer</code>). It does NOT create a new map.</li>
-        <li>Trigger points are stored per browser (localStorage).</li>
-        <li>Vehicle markers are moved by updating the Leaflet marker position – works with PILOT’s native markers.</li>
-        <li>If a marker does not exist for a vehicle, a new one is created at the target point.</li>
-        <li>All API calls to PILOT endpoints respect CORS through the built-in proxy (<code>/store/sensortrigger/...</code>).</li>
-    </ul>
+    <h2>Technical Details</h2>
+    <p><strong>Storage key:</strong> <code>marks_manager_marks</code> in <code>localStorage</code></p>
+    <p><strong>Vehicle data source:</strong> <code>/ax/tree.php?vehs=1&state=1</code> (standard PILOT API)</p>
+    <p><strong>Integration pattern:</strong> Navigation tab + main panel (Pattern A from AI_SPECS.md)</p>
+    <p><strong>Required PILOT objects:</strong> <code>skeleton.navigation</code>, <code>skeleton.mapframe</code>, <code>window.mapContainer</code> / <code>getActiveTabMapContainer()</code> (optional for map centering)</p>
 
-    <h2>Support</h2>
-    <p>For questions, refer to the <a href="https://raw.githubusercontent.com/pilot-telematics/pilot_extensions/main/AI_SPECS.md">AI_SPECS.md</a> or the example extensions in the official repository.</p>
+    <div class="note">
+        <strong>⚠️ Note:</strong> This extension does <em>not</em> modify or write any data back to the PILOT server. All marks are stored locally in your browser. If you clear your browser's local storage, all marks will be lost.
+    </div>
+
+    <h2>Installation & Deployment</h2>
+    <p>To install this extension:</p>
+    <ol>
+        <li>Place the folder <code>marks_manager/</code> on a public HTTPS host (e.g., Cloudflare Pages, GitHub Pages, or your own web server).</li>
+        <li>Ensure <code>Module.js</code> and <code>doc/index.html</code> are accessible at the same base URL.</li>
+        <li>Register the extension in PILOT admin panel: set the extension name to <strong>marks_manager</strong> and the base URL to the public folder (e.g., <code>https://yourdomain.com/marks_manager/</code>).</li>
+        <li>PILOT will proxy the extension as <code>/store/marks_manager/Module.js</code> at runtime.</li>
+    </ol>
+    <p>No additional dependencies or build steps are required.</p>
+
+    <h2>Compatibility</h2>
+    <p>Designed for PILOT GPS platform with Ext JS 7.7+. Follows strict <a href="https://raw.githubusercontent.com/pilot-telematics/pilot_extensions/main/AI_SPECS.md">AI_SPECS.md</a> rules.</p>
+
+    <hr>
+    <p><small>Marks Manager Extension – created for PILOT GPS. Use at your own risk.</small></p>
 </body>
 </html>
