@@ -1,4 +1,4 @@
-Ext.define('Store.ibutton_geofence.Module', {
+Ext.define('Store.test_ble.Module', {
     extend: 'Ext.Component',
     singleton: true,
 
