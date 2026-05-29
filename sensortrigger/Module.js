@@ -1,24 +1,17 @@
 /**
- * Sensor Trigger Extension for PILOT
+ * Sensor Trigger Extension for PILOT (исправленная версия)
  * 
- * Назначение: позволяет задавать точки на карте для идентификаторов датчиков.
- * При срабатывании датчика (симуляция) транспортное средство перемещается в заданную точку.
- * 
- * Соответствует AI_SPECS.md и требованиям промта.
- * Исправлена ошибка с Ext.EventManager.onWindowResize.
+ * Назначение: задавать точки на карте для датчиков и перемещать ТС при срабатывании.
+ * Исправлены проблемы с отображением ТС и интерфейсом.
  */
 
 Ext.define('Store.sensortrigger.Module', {
     extend: 'Ext.Component',
 
-    /**
-     * Основной метод инициализации расширения.
-     * Вызывается PILOT после загрузки Module.js.
-     */
     initModule: function() {
         var me = this;
 
-        // Проверка наличия skeleton и карты
+        // Проверка обязательных объектов
         if (!window.skeleton) {
             Ext.log.error('sensortrigger: skeleton not found');
             return;
@@ -28,85 +21,150 @@ Ext.define('Store.sensortrigger.Module', {
             return;
         }
 
-        // Инициализация флагов для работы с картой
+        // Инициализация переменных
         me.waitingForMapClick = false;
         me.pendingAddWindow = null;
 
-        // Сохраняем ссылку на модуль глобально для вызовов из симуляции
+        // Глобальная ссылка для внешних вызовов
         window.sensortriggerModule = me;
 
-        // Загружаем список ТС из PILOT
-        me.loadVehicles();
-
-        // Создаём левую навигационную вкладку
+        // 1. Создаём левую навигационную вкладку (без зависимостей)
         me.createNavigationTab();
 
-        // Создаём правую плавающую панель управления
-        me.createControlPanel();
+        // 2. Создаём главную панель (mainPanel) и связываем с вкладкой
+        me.createMainPanel();
 
-        // Инициализируем хранилище точек триггера из localStorage
+        // 3. Загружаем ТС из PILOT
+        me.loadVehicles();
+
+        // 4. Загружаем сохранённые точки триггера
         me.loadTriggerPoints();
-
-        // Добавляем существующие точки на карту
         me.renderTriggerPointsOnMap();
 
-        // Настраиваем слушатель клика на карте для выбора координат
+        // 5. Настраиваем клик по карте для добавления координат
         me.setupMapClickListener();
+
+        // 6. Создаём кнопку на карте для добавления точки (опционально)
+        me.addMapButton();
 
         Ext.log('sensortrigger: extension initialized');
     },
 
     // ----------------------------------------------------------------------
-    // 1. Загрузка транспортных средств из /ax/tree.php
+    // ЛЕВАЯ ВКЛАДКА (без Pilot.utils.LeftBarPanel)
     // ----------------------------------------------------------------------
+    createNavigationTab: function() {
+        var me = this;
 
-    /**
-     * Загружает иерархический список групп и ТС.
-     * Результат сохраняется в store для грида в левой вкладке.
-     */
+        // Создаём грид для списка ТС
+        var vehicleGrid = Ext.create('Ext.grid.Panel', {
+            title: 'Транспортные средства',
+            store: Ext.create('Ext.data.Store', { fields: ['vehid', 'name', 'vin', 'model', 'year'] }),
+            columns: [
+                { text: 'Название', dataIndex: 'name', flex: 2 },
+                { text: 'VIN', dataIndex: 'vin', flex: 2 },
+                { text: 'Модель', dataIndex: 'model', flex: 1 },
+                { text: 'Год', dataIndex: 'year', flex: 1, align: 'center' }
+            ],
+            listeners: {
+                select: function(grid, record) {
+                    // Показываем мок-датчики
+                    var vehid = record.get('vehid');
+                    var sensors = me.mockSensors ? me.mockSensors[vehid] : [];
+                    var sensorStr = sensors.map(function(s) { return s.name + ' (' + s.sensor_id + ')'; }).join(', ');
+                    Ext.Msg.show({
+                        title: 'Датчики',
+                        message: 'Датчики для ' + record.get('name') + ':\n' + (sensorStr || 'нет'),
+                        buttons: Ext.Msg.OK,
+                        icon: Ext.Msg.INFO
+                    });
+                }
+            }
+        });
+
+        me.vehicleGrid = vehicleGrid;
+
+        // Обычная панель-вкладка (не LeftBarPanel, чтобы избежать ошибок)
+        var navTab = Ext.create('Ext.panel.Panel', {
+            title: 'Sensor Triggers',
+            iconCls: 'fa fa-microchip',
+            layout: 'fit',
+            items: [vehicleGrid]
+        });
+
+        // Добавляем вкладку в левую навигацию
+        skeleton.navigation.add(navTab);
+        me.navTab = navTab;
+    },
+
+    // ----------------------------------------------------------------------
+    // ГЛАВНАЯ ПАНЕЛЬ (Pattern A: navTab.map_frame = mainPanel)
+    // ----------------------------------------------------------------------
+    createMainPanel: function() {
+        var me = this;
+
+        // Главная панель, которая будет отображаться в skeleton.mapframe
+        var mainPanel = Ext.create('Ext.panel.Panel', {
+            layout: 'fit',
+            // Здесь можно разместить дополнительный UI, но карта уже есть в mapframe
+            // Оставляем пустым, так как используем существующую карту из mapContainer
+            html: '<div style="padding: 10px;">Используйте кнопку на карте или правую панель для добавления точек.</div>'
+        });
+
+        // Связываем вкладку с главной панелью (важно!)
+        me.navTab.map_frame = mainPanel;
+
+        // Добавляем панель в mapframe
+        if (skeleton.mapframe) {
+            skeleton.mapframe.add(mainPanel);
+        } else {
+            Ext.log.warn('sensortrigger: skeleton.mapframe not found, mainPanel not added');
+        }
+
+        me.mainPanel = mainPanel;
+    },
+
+    // ----------------------------------------------------------------------
+    // ЗАГРУЗКА ТРАНСПОРТНЫХ СРЕДСТВ
+    // ----------------------------------------------------------------------
     loadVehicles: function() {
         var me = this;
 
         Ext.Ajax.request({
             url: '/ax/tree.php',
-            params: {
-                vehs: 1,
-                state: 1
-            },
+            params: { vehs: 1, state: 1 },
             success: function(response) {
                 var data = Ext.decode(response.responseText);
-                // Преобразуем иерархию в плоский список
                 var vehicles = me.flattenVehicleTree(data);
                 me.vehiclesStore = Ext.create('Ext.data.Store', {
                     fields: ['vehid', 'name', 'vin', 'model', 'year'],
                     data: vehicles
                 });
-                // Если грид уже создан, обновим его store
                 if (me.vehicleGrid) {
                     me.vehicleGrid.reconfigure(me.vehiclesStore);
                 }
-                // Также создаём мок-сенсоры для каждого ТС
+                // Генерация мок-датчиков
                 me.mockSensors = {};
                 vehicles.forEach(function(vehicle) {
                     me.mockSensors[vehicle.vehid] = me.generateMockSensors(vehicle.vehid);
                 });
                 Ext.log('sensortrigger: loaded ' + vehicles.length + ' vehicles');
+                // Если нет ТС, показываем сообщение
+                if (vehicles.length === 0) {
+                    Ext.Msg.alert('Информация', 'Нет транспортных средств в системе.');
+                }
             },
             failure: function() {
-                Ext.Msg.alert('Ошибка', 'Не удалось загрузить список транспортных средств.');
+                Ext.Msg.alert('Ошибка', 'Не удалось загрузить список ТС. Проверьте соединение.');
             }
         });
     },
 
-    /**
-     * Рекурсивно превращает дерево групп/ТС в плоский массив объектов.
-     */
     flattenVehicleTree: function(nodes, result) {
         result = result || [];
         if (!Ext.isArray(nodes)) return result;
         Ext.Array.each(nodes, function(node) {
             if (node.vehid && node.vehid > 0) {
-                // Это транспортное средство
                 result.push({
                     vehid: node.vehid,
                     name: node.name || 'N/A',
@@ -122,128 +180,125 @@ Ext.define('Store.sensortrigger.Module', {
         return result;
     },
 
-    /**
-     * Генерирует мок-список датчиков для демонстрации.
-     * В реальной системе здесь должен быть запрос к API датчиков PILOT.
-     */
     generateMockSensors: function(vehid) {
         return [
-            { sensor_id: 'engine_temp_' + vehid, name: 'Температура двигателя', value: 0 },
-            { sensor_id: 'fuel_level_' + vehid, name: 'Уровень топлива', value: 0 },
-            { sensor_id: 'door_status_' + vehid, name: 'Состояние двери', value: 0 }
+            { sensor_id: 'engine_temp_' + vehid, name: 'Температура двигателя' },
+            { sensor_id: 'fuel_level_' + vehid, name: 'Уровень топлива' },
+            { sensor_id: 'door_status_' + vehid, name: 'Состояние двери' }
         ];
     },
 
     // ----------------------------------------------------------------------
-    // 2. Левая навигационная вкладка (Pattern A)
+    // ТОЧКИ ТРИГГЕРА (localStorage)
     // ----------------------------------------------------------------------
-
-    /**
-     * Создаёт левую вкладку с гридом транспортных средств.
-     * Используется Pilot.utils.LeftBarPanel для совместимости с темой PILOT.
-     */
-    createNavigationTab: function() {
+    loadTriggerPoints: function() {
         var me = this;
-
-        // Создаём панель, которая будет содержимым вкладки
-        var navContent = Ext.create('Ext.panel.Panel', {
-            layout: 'fit',
-            items: [{
-                xtype: 'gridpanel',
-                itemId: 'vehicleGrid',
-                title: 'Транспорт',
-                store: me.vehiclesStore || Ext.create('Ext.data.Store', { fields: ['vehid', 'name', 'vin', 'model', 'year'] }),
-                columns: [
-                    { text: l('Название'), dataIndex: 'name', flex: 2 },
-                    { text: 'VIN', dataIndex: 'vin', flex: 2 },
-                    { text: l('Модель'), dataIndex: 'model', flex: 1 },
-                    { text: l('Год'), dataIndex: 'year', flex: 1, align: 'center' }
-                ],
-                listeners: {
-                    select: function(grid, record) {
-                        // При выборе ТС можно показать его датчики (опционально)
-                        var vehid = record.get('vehid');
-                        var sensors = me.mockSensors[vehid] || [];
-                        var sensorStr = sensors.map(function(s) { return s.name + ' (' + s.sensor_id + ')'; }).join(', ');
-                        Ext.Msg.show({
-                            title: 'Датчики',
-                            message: 'Доступные датчики для ' + record.get('name') + ':\n' + (sensorStr || 'нет'),
-                            buttons: Ext.Msg.OK,
-                            icon: Ext.Msg.INFO
-                        });
-                    }
-                }
-            }]
-        });
-
-        // Создаём вкладку с помощью LeftBarPanel
-        var navTab = Ext.create('Pilot.utils.LeftBarPanel', {
-            title: l('Sensor Triggers'),
-            iconCls: 'fa fa-microchip',
-            iconAlign: 'top',
-            minimized: true,
-            items: [navContent]
-        });
-
-        // Сохраняем ссылку на грид для обновления store позже
-        me.vehicleGrid = navContent.down('#vehicleGrid');
-
-        // Добавляем вкладку в левую панель навигации
-        skeleton.navigation.add(navTab);
-    },
-
-    // ----------------------------------------------------------------------
-    // 3. Правая плавающая панель управления
-    // ----------------------------------------------------------------------
-
-    /**
-     * Создаёт панель управления, которая прикрепляется к правому краю окна.
-     * Содержит кнопки, список точек триггера и лог событий.
-     */
-    createControlPanel: function() {
-        var me = this;
-
-        // Хранилище для точек триггера
         me.triggerPointsStore = Ext.create('Ext.data.Store', {
             fields: ['sensorId', 'lat', 'lon', 'label'],
             data: []
         });
+        var stored = localStorage.getItem('sensortrigger_points');
+        if (stored) {
+            try {
+                var points = Ext.decode(stored);
+                me.triggerPointsStore.loadData(points);
+                Ext.log('sensortrigger: loaded ' + points.length + ' trigger points');
+            } catch(e) {}
+        }
+        // Создаём правую панель управления после загрузки store
+        me.createControlPanel();
+    },
 
-        // Хранилище для лога событий
+    saveTriggerPoints: function() {
+        var data = [];
+        this.triggerPointsStore.each(function(rec) {
+            data.push(rec.getData());
+        });
+        localStorage.setItem('sensortrigger_points', Ext.encode(data));
+    },
+
+    addTriggerPoint: function(sensorId, lat, lon, label) {
+        var me = this;
+        var record = Ext.create('Ext.data.Model', {
+            fields: ['sensorId', 'lat', 'lon', 'label'],
+            data: { sensorId: sensorId, lat: lat, lon: lon, label: label || '' }
+        });
+        me.triggerPointsStore.add(record);
+        me.saveTriggerPoints();
+        me.addTriggerPointMarker(record);
+        Ext.Msg.alert('Успех', 'Точка триггера добавлена');
+    },
+
+    deleteTriggerPoint: function(record) {
+        var me = this;
+        me.triggerPointsStore.remove(record);
+        me.saveTriggerPoints();
+        me.removeTriggerPointMarker(record.get('sensorId'));
+    },
+
+    renderTriggerPointsOnMap: function() {
+        var me = this;
+        me.triggerPointsStore.each(function(rec) {
+            me.addTriggerPointMarker(rec);
+        });
+    },
+
+    addTriggerPointMarker: function(record) {
+        var map = this.getPilotMap();
+        if (!map || !map.addMarker) return;
+        map.addMarker({
+            id: 'trigger_' + record.get('sensorId'),
+            lat: record.get('lat'),
+            lon: record.get('lon'),
+            hint: record.get('label') || record.get('sensorId')
+        });
+    },
+
+    removeTriggerPointMarker: function(sensorId) {
+        var map = this.getPilotMap();
+        if (map && map.removeMarker) {
+            map.removeMarker('trigger_' + sensorId);
+        }
+    },
+
+    // ----------------------------------------------------------------------
+    // ПРАВАЯ ПАНЕЛЬ УПРАВЛЕНИЯ
+    // ----------------------------------------------------------------------
+    createControlPanel: function() {
+        var me = this;
+
+        // Хранилище для лога
         me.logStore = Ext.create('Ext.data.Store', {
             fields: ['timestamp', 'vehicleName', 'sensorId', 'targetLabel'],
             data: []
         });
 
-        // Панель со списком точек (для отображения в правой панели)
         var pointsGrid = Ext.create('Ext.grid.Panel', {
-            title: l('Точки триггеров'),
+            title: 'Точки триггеров',
             store: me.triggerPointsStore,
             columns: [
                 { text: 'Sensor ID', dataIndex: 'sensorId', flex: 2 },
-                { text: l('Метка'), dataIndex: 'label', flex: 2 },
-                { text: l('Координаты'), dataIndex: 'lat', flex: 1, renderer: function(v, m, rec) { return rec.get('lat') + ', ' + rec.get('lon'); } }
+                { text: 'Метка', dataIndex: 'label', flex: 2 },
+                { text: 'Координаты', flex: 1, renderer: function(v, m, rec) {
+                    return rec.get('lat') + ', ' + rec.get('lon');
+                }}
             ],
             height: 200,
             tbar: [{
-                text: l('Добавить'),
+                text: 'Добавить',
                 iconCls: 'fa fa-plus',
                 handler: function() { me.showAddTriggerWindow(); }
             }, {
-                text: l('Удалить'),
+                text: 'Удалить',
                 iconCls: 'fa fa-trash',
                 handler: function() {
                     var selected = pointsGrid.getSelectionModel().getSelection();
-                    if (selected.length) {
-                        me.deleteTriggerPoint(selected[0]);
-                    } else {
-                        Ext.Msg.alert(l('Внимание'), l('Выберите точку для удаления.'));
-                    }
+                    if (selected.length) me.deleteTriggerPoint(selected[0]);
+                    else Ext.Msg.alert('Внимание', 'Выберите точку');
                 }
             }],
             listeners: {
                 select: function(grid, record) {
-                    // При выборе точки можно центрировать карту на ней
                     var map = me.getPilotMap();
                     if (map && map.setMapCenter) {
                         map.setMapCenter(record.get('lat'), record.get('lon'));
@@ -253,38 +308,31 @@ Ext.define('Store.sensortrigger.Module', {
             }
         });
 
-        // Лог событий
         var logGrid = Ext.create('Ext.grid.Panel', {
-            title: l('Журнал срабатываний'),
+            title: 'Журнал срабатываний',
             store: me.logStore,
             columns: [
-                { text: l('Время'), dataIndex: 'timestamp', width: 120 },
-                { text: l('ТС'), dataIndex: 'vehicleName', flex: 2 },
+                { text: 'Время', dataIndex: 'timestamp', width: 120 },
+                { text: 'ТС', dataIndex: 'vehicleName', flex: 2 },
                 { text: 'Sensor ID', dataIndex: 'sensorId', flex: 2 },
-                { text: l('Точка'), dataIndex: 'targetLabel', flex: 2 }
+                { text: 'Точка', dataIndex: 'targetLabel', flex: 2 }
             ],
             height: 200
         });
 
-        // Главная панель управления (плавающая, прикреплённая к правому краю)
         me.controlPanel = Ext.create('Ext.panel.Panel', {
             floating: true,
-            width: 400,
+            width: 350,
             shadow: true,
-            draggable: false,
-            resizable: false,
             cls: 'sensortrigger-right-panel',
             layout: 'border',
-            title: l('Управление датчиками'),
-            tools: [{
-                type: 'close',
-                handler: function() { me.controlPanel.hide(); }
-            }],
+            title: 'Управление датчиками',
+            tools: [{ type: 'close', handler: function() { me.controlPanel.hide(); } }],
             items: [{
                 region: 'north',
                 xtype: 'toolbar',
                 items: [{
-                    text: l('Симуляция триггера'),
+                    text: 'Симуляция триггера',
                     iconCls: 'fa fa-bolt',
                     handler: function() { me.showSimulateWindow(); }
                 }]
@@ -300,147 +348,57 @@ Ext.define('Store.sensortrigger.Module', {
             }]
         });
 
-        // Размещаем панель в правом верхнем углу (относительно документа)
         me.controlPanel.show();
-        me.controlPanel.setPosition(document.documentElement.clientWidth - 410, 80);
+        me.controlPanel.setPosition(document.documentElement.clientWidth - 360, 80);
 
-        // Безопасное отслеживание изменения размера окна
-        // Используем Ext.on (если доступен) или нативный addEventListener
-        var resizeHandler = function(width) {
+        // Ресайз
+        var resizeHandler = function() {
             if (me.controlPanel && me.controlPanel.isVisible()) {
-                var w = width || document.documentElement.clientWidth;
-                me.controlPanel.setPosition(w - 410, 80);
+                me.controlPanel.setPosition(document.documentElement.clientWidth - 360, 80);
             }
         };
+        if (Ext.on) Ext.on('resize', resizeHandler);
+        else window.addEventListener('resize', resizeHandler);
+    },
 
-        if (Ext.on && typeof Ext.on === 'function') {
-            // Ext JS способ
-            Ext.on('resize', resizeHandler);
-        } else if (window.addEventListener) {
-            window.addEventListener('resize', function() {
-                resizeHandler(document.documentElement.clientWidth);
-            });
-        } else {
-            // Fallback: проверка через интервал (не рекомендуется, но для совместимости)
-            var interval = setInterval(function() {
-                if (me.controlPanel && me.controlPanel.isVisible()) {
-                    resizeHandler(document.documentElement.clientWidth);
-                }
-            }, 500);
-            // Сохраняем интервал для возможной очистки при разрушении модуля
-            me._resizeInterval = interval;
+    // ----------------------------------------------------------------------
+    // КНОПКА НА КАРТЕ
+    // ----------------------------------------------------------------------
+    addMapButton: function() {
+        var me = this;
+        var map = me.getPilotMap();
+        if (!map || !map.map) return;
+        // Создаём простую HTML кнопку в углу карты (через DOM)
+        var btn = document.createElement('button');
+        btn.innerHTML = '➕ Добавить точку';
+        btn.style.position = 'absolute';
+        btn.style.top = '10px';
+        btn.style.right = '10px';
+        btn.style.zIndex = '1000';
+        btn.style.padding = '8px 12px';
+        btn.style.backgroundColor = '#3b82f6';
+        btn.style.color = 'white';
+        btn.style.border = 'none';
+        btn.style.borderRadius = '4px';
+        btn.style.cursor = 'pointer';
+        btn.style.fontWeight = 'bold';
+        btn.onclick = function() { me.showAddTriggerWindow(); };
+        // Находим контейнер карты
+        var container = map.map._container || map.map.getContainer();
+        if (container && container.parentNode) {
+            container.parentNode.style.position = 'relative';
+            container.parentNode.appendChild(btn);
         }
     },
 
     // ----------------------------------------------------------------------
-    // 4. Работа с точками триггера (localStorage и карта)
+    // ВЗАИМОДЕЙСТВИЕ С КАРТОЙ
     // ----------------------------------------------------------------------
-
-    /**
-     * Загружает точки триггера из localStorage.
-     */
-    loadTriggerPoints: function() {
-        var stored = localStorage.getItem('sensortrigger_points');
-        if (stored) {
-            try {
-                var points = Ext.decode(stored);
-                this.triggerPointsStore.loadData(points);
-            } catch(e) {}
-        }
-    },
-
-    /**
-     * Сохраняет текущие точки в localStorage.
-     */
-    saveTriggerPoints: function() {
-        var data = [];
-        this.triggerPointsStore.each(function(rec) {
-            data.push(rec.getData());
-        });
-        localStorage.setItem('sensortrigger_points', Ext.encode(data));
-    },
-
-    /**
-     * Добавляет новую точку триггера.
-     */
-    addTriggerPoint: function(sensorId, lat, lon, label) {
-        var me = this;
-        var record = Ext.create('Ext.data.Model', {
-            fields: ['sensorId', 'lat', 'lon', 'label'],
-            data: { sensorId: sensorId, lat: lat, lon: lon, label: label || '' }
-        });
-        me.triggerPointsStore.add(record);
-        me.saveTriggerPoints();
-        // Добавляем маркер на карту
-        me.addTriggerPointMarker(record);
-        Ext.Msg.alert(l('Успех'), l('Точка триггера добавлена.'));
-    },
-
-    /**
-     * Удаляет точку триггера.
-     */
-    deleteTriggerPoint: function(record) {
-        var me = this;
-        me.triggerPointsStore.remove(record);
-        me.saveTriggerPoints();
-        // Удаляем маркер с карты
-        me.removeTriggerPointMarker(record.get('sensorId'));
-    },
-
-    /**
-     * Отображает все сохранённые точки на карте.
-     */
-    renderTriggerPointsOnMap: function() {
-        var me = this;
-        me.triggerPointsStore.each(function(rec) {
-            me.addTriggerPointMarker(rec);
-        });
-    },
-
-    /**
-     * Добавляет маркер для точки триггера на карту.
-     * Используется MapContainer.addMarker.
-     */
-    addTriggerPointMarker: function(record) {
-        var map = this.getPilotMap();
-        if (!map || !map.addMarker) return;
-        var markerId = 'trigger_' + record.get('sensorId');
-        map.addMarker({
-            id: markerId,
-            lat: record.get('lat'),
-            lon: record.get('lon'),
-            hint: record.get('label') || record.get('sensorId'),
-            // Можно задать иконку, но оставим стандартную
-        });
-    },
-
-    /**
-     * Удаляет маркер точки триггера с карты.
-     */
-    removeTriggerPointMarker: function(sensorId) {
-        var map = this.getPilotMap();
-        if (map && map.removeMarker) {
-            map.removeMarker('trigger_' + sensorId);
-        }
-    },
-
-    // ----------------------------------------------------------------------
-    // 5. Работа с картой (существующей)
-    // ----------------------------------------------------------------------
-
-    /**
-     * Возвращает текущий активный контейнер карты (Online).
-     */
     getPilotMap: function() {
-        if (window.getActiveTabMapContainer) {
-            return getActiveTabMapContainer();
-        }
+        if (window.getActiveTabMapContainer) return getActiveTabMapContainer();
         return window.mapContainer || null;
     },
 
-    /**
-     * Настраивает слушатель клика на карте для заполнения координат в окне добавления.
-     */
     setupMapClickListener: function() {
         var me = this;
         var map = me.getPilotMap();
@@ -449,23 +407,24 @@ Ext.define('Store.sensortrigger.Module', {
             if (me.waitingForMapClick) {
                 var lat = e.latlng.lat;
                 var lng = e.latlng.lng;
-                if (me.pendingAddWindow && me.pendingAddWindow.down('textfield[itemId=latField]')) {
-                    me.pendingAddWindow.down('textfield[itemId=latField]').setValue(lat);
-                    me.pendingAddWindow.down('textfield[itemId=lonField]').setValue(lng);
+                if (me.pendingAddWindow) {
+                    var latField = me.pendingAddWindow.down('textfield[itemId=latField]');
+                    var lonField = me.pendingAddWindow.down('textfield[itemId=lonField]');
+                    if (latField && lonField) {
+                        latField.setValue(lat);
+                        lonField.setValue(lng);
+                    }
                 }
                 me.waitingForMapClick = false;
-                Ext.Msg.alert(l('Готово'), l('Координаты добавлены в форму.'));
+                Ext.Msg.alert('Готово', 'Координаты добавлены в форму');
             }
         });
     },
 
-    /**
-     * Показывает окно для добавления новой точки триггера.
-     */
     showAddTriggerWindow: function() {
         var me = this;
         var win = Ext.create('Ext.window.Window', {
-            title: l('Добавить точку триггера'),
+            title: 'Добавить точку триггера',
             width: 400,
             modal: true,
             layout: 'anchor',
@@ -477,38 +436,38 @@ Ext.define('Store.sensortrigger.Module', {
                 allowBlank: false
             }, {
                 xtype: 'textfield',
-                fieldLabel: l('Метка (опционально)'),
+                fieldLabel: 'Метка (опционально)',
                 itemId: 'labelField'
             }, {
                 xtype: 'numberfield',
-                fieldLabel: l('Широта'),
+                fieldLabel: 'Широта',
                 itemId: 'latField',
                 step: 0.000001,
                 allowBlank: false
             }, {
                 xtype: 'numberfield',
-                fieldLabel: l('Долгота'),
+                fieldLabel: 'Долгота',
                 itemId: 'lonField',
                 step: 0.000001,
                 allowBlank: false
             }, {
                 xtype: 'button',
-                text: l('Выбрать на карте'),
+                text: 'Выбрать на карте',
                 handler: function() {
                     me.waitingForMapClick = true;
                     me.pendingAddWindow = win;
-                    Ext.Msg.alert(l('Инструкция'), l('Кликните на карте в нужном месте. Координаты будут вставлены автоматически.'));
+                    Ext.Msg.alert('Инструкция', 'Кликните на карте в нужном месте');
                 }
             }],
             buttons: [{
-                text: l('Сохранить'),
+                text: 'Сохранить',
                 handler: function() {
                     var sensorId = win.down('#sensorIdField').getValue();
                     var lat = win.down('#latField').getValue();
                     var lon = win.down('#lonField').getValue();
                     var label = win.down('#labelField').getValue();
                     if (!sensorId || !lat || !lon) {
-                        Ext.Msg.alert(l('Ошибка'), l('Заполните Sensor ID, широту и долготу.'));
+                        Ext.Msg.alert('Ошибка', 'Заполните Sensor ID, широту и долготу');
                         return;
                     }
                     me.addTriggerPoint(sensorId, lat, lon, label);
@@ -516,32 +475,22 @@ Ext.define('Store.sensortrigger.Module', {
                     me.waitingForMapClick = false;
                 }
             }, {
-                text: l('Отмена'),
-                handler: function() {
-                    win.close();
-                    me.waitingForMapClick = false;
-                }
+                text: 'Отмена',
+                handler: function() { win.close(); me.waitingForMapClick = false; }
             }]
         });
         win.show();
     },
 
-    // ----------------------------------------------------------------------
-    // 6. Симуляция триггера и перемещение маркера ТС
-    // ----------------------------------------------------------------------
-
-    /**
-     * Показывает окно для выбора ТС и Sensor ID, затем вызывает симуляцию.
-     */
     showSimulateWindow: function() {
         var me = this;
         if (!me.vehiclesStore || me.vehiclesStore.getCount() === 0) {
-            Ext.Msg.alert(l('Ошибка'), l('Список ТС ещё не загружен. Попробуйте позже.'));
+            Ext.Msg.alert('Ошибка', 'Список ТС ещё не загружен');
             return;
         }
 
         var vehicleCombo = Ext.create('Ext.form.field.ComboBox', {
-            fieldLabel: l('Транспортное средство'),
+            fieldLabel: 'Транспортное средство',
             store: me.vehiclesStore,
             displayField: 'name',
             valueField: 'vehid',
@@ -567,38 +516,32 @@ Ext.define('Store.sensortrigger.Module', {
         });
 
         var win = Ext.create('Ext.window.Window', {
-            title: l('Симуляция срабатывания датчика'),
+            title: 'Симуляция срабатывания датчика',
             width: 400,
             modal: true,
             items: [vehicleCombo, sensorCombo],
             buttons: [{
-                text: l('Симулировать'),
+                text: 'Симулировать',
                 handler: function() {
                     var vehid = vehicleCombo.getValue();
                     var sensorId = sensorCombo.getValue();
                     if (!vehid || !sensorId) {
-                        Ext.Msg.alert(l('Ошибка'), l('Выберите ТС и Sensor ID.'));
+                        Ext.Msg.alert('Ошибка', 'Выберите ТС и Sensor ID');
                         return;
                     }
                     win.close();
                     me.simulateTrigger(vehid, sensorId);
                 }
             }, {
-                text: l('Отмена'),
+                text: 'Отмена',
                 handler: function() { win.close(); }
             }]
         });
         win.show();
     },
 
-    /**
-     * Основная логика при срабатывании датчика.
-     * Ищет точку триггера по sensorId и перемещает ТС.
-     * В реальной системе этот метод вызывается через WebSocket/периодический опрос.
-     */
     simulateTrigger: function(vehid, sensorId) {
         var me = this;
-        // Ищем точку триггера в store
         var triggerRecord = null;
         me.triggerPointsStore.each(function(rec) {
             if (rec.get('sensorId') === sensorId) {
@@ -607,70 +550,43 @@ Ext.define('Store.sensortrigger.Module', {
             }
         });
         if (!triggerRecord) {
-            Ext.Msg.alert(l('Нет точки'), l('Для Sensor ID "' + sensorId + '" не задана точка триггера.'));
+            Ext.Msg.alert('Нет точки', 'Для Sensor ID "' + sensorId + '" не задана точка триггера');
             return;
         }
 
-        // Находим название ТС
         var vehicleRecord = me.vehiclesStore.findRecord('vehid', vehid);
         var vehicleName = vehicleRecord ? vehicleRecord.get('name') : 'ID:' + vehid;
 
-        // Перемещаем маркер
         var success = me.moveVehicleMarker(vehid, triggerRecord.get('lat'), triggerRecord.get('lon'));
         if (success) {
-            // Добавляем запись в лог
             me.logStore.add({
                 timestamp: Ext.Date.format(new Date(), 'Y-m-d H:i:s'),
                 vehicleName: vehicleName,
                 sensorId: sensorId,
                 targetLabel: triggerRecord.get('label') || sensorId
             });
-            Ext.Msg.alert(l('Триггер'), l('ТС "' + vehicleName + '" перемещён в точку "' + (triggerRecord.get('label') || sensorId) + '"'));
+            Ext.Msg.alert('Триггер', 'ТС "' + vehicleName + '" перемещён в точку "' + (triggerRecord.get('label') || sensorId) + '"');
         } else {
-            Ext.Msg.alert(l('Ошибка'), l('Не удалось найти маркер ТС на карте.'));
+            Ext.Msg.alert('Ошибка', 'Не удалось найти маркер ТС на карте');
         }
     },
 
-    /**
-     * Перемещает маркер транспортного средства на карте.
-     * Использует getMarker + setLatLng (Leaflet) или remove/add.
-     */
     moveVehicleMarker: function(vehid, lat, lon) {
         var map = this.getPilotMap();
         if (!map) return false;
-
-        // Пытаемся получить существующий маркер по ID (PILOT обычно использует vehid как ID маркера)
-        var marker = null;
-        if (map.getMarker) {
-            marker = map.getMarker(vehid);
-        }
+        var marker = map.getMarker ? map.getMarker(vehid) : null;
         if (marker && marker.setLatLng) {
-            // Leaflet marker
             marker.setLatLng([lat, lon]);
             return true;
         } else if (map.addMarker) {
-            // Если маркер не найден, удаляем старый (если есть) и добавляем новый
-            if (map.removeMarker) {
-                map.removeMarker(vehid);
-            }
-            map.addMarker({
-                id: vehid,
-                lat: lat,
-                lon: lon,
-                hint: 'Vehicle ' + vehid
-            });
+            if (map.removeMarker) map.removeMarker(vehid);
+            map.addMarker({ id: vehid, lat: lat, lon: lon, hint: 'Vehicle ' + vehid });
             return true;
         }
         return false;
     },
 
-    /**
-     * Публичный метод для внешнего вызова (например, из реального API датчиков).
-     * @param {number|string} vehid
-     * @param {string} sensorId
-     */
     moveVehicleOnSensor: function(vehid, sensorId) {
         this.simulateTrigger(vehid, sensorId);
     }
-
 });
