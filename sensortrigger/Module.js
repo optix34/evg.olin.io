@@ -1,6 +1,5 @@
 /**
- * Позиция по меткам – доработанная версия
- * Выбор точки на карте по клику, затем открытие окна с подставленными координатами.
+ * Позиция по меткам – версия с корректным отображением точек на карте
  */
 
 Ext.define('Store.sensortrigger.Module', {
@@ -20,10 +19,12 @@ Ext.define('Store.sensortrigger.Module', {
             console.log('[sensortrigger] map is ready');
             me.createNavigationTab();
             me.loadVehicles();
-            me.loadTriggerPoints();
+            me.loadTriggerPoints();        // загружает точки из localStorage
             me.createControlPanel();
-            me.setupMapClickListener();   // слушатель кликов (для выбора точки)
-            me.addMapButton();            // кнопка в левом нижнем углу
+            me.setupMapClickListener();
+            me.addMapButton();
+            // ВАЖНО: после загрузки точек отображаем их на карте
+            me.renderTriggerPointsOnMap();
         });
     },
 
@@ -140,7 +141,7 @@ Ext.define('Store.sensortrigger.Module', {
         return result;
     },
 
-    // -------------------- Точки привязки (localStorage) --------------------
+    // -------------------- Точки привязки --------------------
     loadTriggerPoints: function() {
         var me = this;
         me.triggerPointsStore = Ext.create('Ext.data.Store', {
@@ -152,7 +153,7 @@ Ext.define('Store.sensortrigger.Module', {
             try {
                 var points = Ext.decode(stored);
                 me.triggerPointsStore.loadData(points);
-                console.log('[sensortrigger] loaded', points.length, 'trigger points');
+                console.log('[sensortrigger] loaded', points.length, 'trigger points from localStorage');
             } catch(e) {}
         }
     },
@@ -163,6 +164,7 @@ Ext.define('Store.sensortrigger.Module', {
             data.push(rec.getData());
         });
         localStorage.setItem('sensortrigger_points', Ext.encode(data));
+        console.log('[sensortrigger] saved', data.length, 'points');
     },
 
     addTriggerPoint: function(sensorId, lat, lon, label) {
@@ -184,21 +186,71 @@ Ext.define('Store.sensortrigger.Module', {
         me.removeTriggerPointMarker(record.get('sensorId'));
     },
 
+    // Отрисовка всех сохранённых точек на карте
+    renderTriggerPointsOnMap: function() {
+        var me = this;
+        console.log('[sensortrigger] renderTriggerPointsOnMap, store count:', me.triggerPointsStore.getCount());
+        me.triggerPointsStore.each(function(rec) {
+            me.addTriggerPointMarker(rec);
+        });
+    },
+
+    // Универсальное добавление маркера точки привязки
     addTriggerPointMarker: function(record) {
         var map = this.getMap();
-        if (!map || !map.addMarker) return;
-        map.addMarker({
-            id: 'trigger_' + record.get('sensorId'),
-            lat: record.get('lat'),
-            lon: record.get('lon'),
-            hint: record.get('label') || record.get('sensorId')
-        });
+        if (!map) {
+            console.error('[sensortrigger] addTriggerPointMarker: no map');
+            return;
+        }
+        var sensorId = record.get('sensorId');
+        var lat = record.get('lat');
+        var lon = record.get('lon');
+        var label = record.get('label') || sensorId;
+        var markerId = 'trigger_' + sensorId;
+
+        // Сначала пробуем штатный метод MapContainer
+        if (map.addMarker && typeof map.addMarker === 'function') {
+            console.log('[sensortrigger] adding marker via map.addMarker', markerId, lat, lon);
+            map.addMarker({
+                id: markerId,
+                lat: lat,
+                lon: lon,
+                hint: label,
+                // опционально: цвет или иконка
+                icon: L.icon({
+                    iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+                    shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+                    iconSize: [25, 41],
+                    iconAnchor: [12, 41]
+                })
+            });
+        } 
+        // Если нет addMarker, но есть прямой доступ к Leaflet карте
+        else if (map.map && map.map instanceof L.Map) {
+            console.log('[sensortrigger] adding marker directly via Leaflet', markerId, lat, lon);
+            var leafletMap = map.map;
+            // Удаляем старый маркер, если есть
+            if (this.leafletMarkers && this.leafletMarkers[markerId]) {
+                leafletMap.removeLayer(this.leafletMarkers[markerId]);
+            }
+            var marker = L.marker([lat, lon], { title: label }).bindPopup(label);
+            marker.addTo(leafletMap);
+            if (!this.leafletMarkers) this.leafletMarkers = {};
+            this.leafletMarkers[markerId] = marker;
+        } 
+        else {
+            console.error('[sensortrigger] cannot add marker, unknown map API');
+        }
     },
 
     removeTriggerPointMarker: function(sensorId) {
         var map = this.getMap();
-        if (map && map.removeMarker) {
-            map.removeMarker('trigger_' + sensorId);
+        var markerId = 'trigger_' + sensorId;
+        if (map && map.removeMarker && typeof map.removeMarker === 'function') {
+            map.removeMarker(markerId);
+        } else if (map && map.map && this.leafletMarkers && this.leafletMarkers[markerId]) {
+            map.map.removeLayer(this.leafletMarkers[markerId]);
+            delete this.leafletMarkers[markerId];
         }
     },
 
@@ -225,10 +277,7 @@ Ext.define('Store.sensortrigger.Module', {
             tbar: [{
                 text: 'Добавить',
                 iconCls: 'fa fa-plus',
-                handler: function() {
-                    // Новая логика: сразу активируем выбор на карте
-                    me.startPointSelection();
-                }
+                handler: function() { me.startPointSelection(); }
             }, {
                 text: 'Удалить',
                 iconCls: 'fa fa-trash',
@@ -315,7 +364,7 @@ Ext.define('Store.sensortrigger.Module', {
         btn.innerHTML = '➕ Добавить точку привязки';
         btn.style.position = 'absolute';
         btn.style.bottom = '20px';
-        btn.style.left = '20px';          // нижний левый угол
+        btn.style.left = '20px';
         btn.style.zIndex = '1000';
         btn.style.padding = '10px 15px';
         btn.style.backgroundColor = '#3b82f6';
@@ -326,7 +375,7 @@ Ext.define('Store.sensortrigger.Module', {
         btn.style.fontWeight = 'bold';
         btn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
         btn.onclick = function() {
-            me.startPointSelection();   // активировать выбор точки на карте
+            me.startPointSelection();
         };
 
         var container = map.map._container || map.map.getContainer();
@@ -358,18 +407,12 @@ Ext.define('Store.sensortrigger.Module', {
             if (me.waitingForMapClick) {
                 var lat = e.latlng.lat;
                 var lng = e.latlng.lng;
-                me.waitingForMapClick = false;   // сбросить флаг
-                // Открыть окно с уже заполненными координатами
+                me.waitingForMapClick = false;
                 me.showAddTriggerWindowWithCoords(lat, lng);
             }
         });
     },
 
-    /**
-     * Открывает окно добавления точки с предзаполненными координатами.
-     * @param {number} lat
-     * @param {number} lon
-     */
     showAddTriggerWindowWithCoords: function(lat, lon) {
         var me = this;
         var win = Ext.create('Ext.window.Window', {
@@ -393,16 +436,14 @@ Ext.define('Store.sensortrigger.Module', {
                 itemId: 'latField',
                 value: lat,
                 step: 0.000001,
-                allowBlank: false,
-                readOnly: false   // можно редактировать, если нужно
+                allowBlank: false
             }, {
                 xtype: 'numberfield',
                 fieldLabel: 'Долгота',
                 itemId: 'lonField',
                 value: lon,
                 step: 0.000001,
-                allowBlank: false,
-                readOnly: false
+                allowBlank: false
             }],
             buttons: [{
                 text: 'Сохранить',
@@ -420,15 +461,13 @@ Ext.define('Store.sensortrigger.Module', {
                 }
             }, {
                 text: 'Отмена',
-                handler: function() {
-                    win.close();
-                }
+                handler: function() { win.close(); }
             }]
         });
         win.show();
     },
 
-    // -------------------- Симуляция триггера (без изменений) --------------------
+    // -------------------- Симуляция срабатывания --------------------
     showSimulateWindow: function() {
         var me = this;
         if (!me.vehiclesStore || me.vehiclesStore.getCount() === 0) {
@@ -528,6 +567,17 @@ Ext.define('Store.sensortrigger.Module', {
         } else if (map.addMarker) {
             if (map.removeMarker) map.removeMarker(vehid);
             map.addMarker({ id: vehid, lat: lat, lon: lon, hint: 'Vehicle' });
+            return true;
+        } else if (map.map && map.map instanceof L.Map) {
+            // Fallback: напрямую через Leaflet
+            var leafletMap = map.map;
+            if (this.vehicleLeafletMarkers && this.vehicleLeafletMarkers[vehid]) {
+                leafletMap.removeLayer(this.vehicleLeafletMarkers[vehid]);
+            }
+            var newMarker = L.marker([lat, lon]).bindPopup('Vehicle ' + vehid);
+            newMarker.addTo(leafletMap);
+            if (!this.vehicleLeafletMarkers) this.vehicleLeafletMarkers = {};
+            this.vehicleLeafletMarkers[vehid] = newMarker;
             return true;
         }
         return false;
