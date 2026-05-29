@@ -1,6 +1,6 @@
 /**
- * Sensor Trigger Extension – упрощённая и исправленная версия
- * Работает с существующей картой PILOT, не создаёт своих панелей.
+ * Sensor Trigger Extension – "Позиция по меткам"
+ * Исправлено: отображение ТС, название вкладки, парсинг дерева.
  */
 
 Ext.define('Store.sensortrigger.Module', {
@@ -11,31 +11,26 @@ Ext.define('Store.sensortrigger.Module', {
 
         console.log('[sensortrigger] initModule started');
 
-        // 1. Проверка skeleton
         if (!window.skeleton) {
             console.error('[sensortrigger] skeleton not found');
             return;
         }
-        console.log('[sensortrigger] skeleton OK');
 
-        // 2. Проверка карты (с задержкой, т.к. может быть ещё не готова)
         me.waitForMap(function() {
-            console.log('[sensortrigger] map is ready');
-            me.createNavigationTab();   // левая вкладка
-            me.loadVehicles();          // загрузка ТС
-            me.loadTriggerPoints();     // загрузка сохранённых точек
-            me.createControlPanel();    // правая панель
-            me.addMapButton();          // кнопка на карте
-            me.setupMapClickListener(); // клик по карте
+            console.log('[sensortrigger] map ready');
+            me.createNavigationTab();
+            me.loadVehicles();
+            me.loadTriggerPoints();
+            me.createControlPanel();
+            me.addMapButton();
+            me.setupMapClickListener();
         });
     },
 
-    // ----------------------------------------------------------------------
-    // Ожидание появления карты
-    // ----------------------------------------------------------------------
+    // Ожидание карты
     waitForMap: function(callback) {
         var check = function() {
-            var map = window.mapContainer || window.getActiveTabMapContainer?.();
+            var map = window.mapContainer || (window.getActiveTabMapContainer && window.getActiveTabMapContainer());
             if (map && map.map) {
                 callback();
             } else {
@@ -47,12 +42,11 @@ Ext.define('Store.sensortrigger.Module', {
     },
 
     // ----------------------------------------------------------------------
-    // ЛЕВАЯ ВКЛАДКА (без LeftBarPanel)
+    // ЛЕВАЯ ВКЛАДКА С НОВЫМ НАЗВАНИЕМ
     // ----------------------------------------------------------------------
     createNavigationTab: function() {
         var me = this;
 
-        // Создаём грид для ТС
         me.vehicleGrid = Ext.create('Ext.grid.Panel', {
             title: 'Транспорт',
             store: Ext.create('Ext.data.Store', {
@@ -74,25 +68,23 @@ Ext.define('Store.sensortrigger.Module', {
             }
         });
 
-        // Создаём панель-вкладку
         var navTab = Ext.create('Ext.panel.Panel', {
-            title: 'Sensor Triggers',
+            title: 'Позиция по меткам',          // ← ИЗМЕНЕНО НАЗВАНИЕ
             iconCls: 'fa fa-microchip',
             layout: 'fit',
             items: [me.vehicleGrid]
         });
 
-        // Добавляем в левую навигацию
         if (skeleton.navigation) {
             skeleton.navigation.add(navTab);
             console.log('[sensortrigger] navigation tab added');
         } else {
-            console.error('[sensortrigger] skeleton.navigation not found');
+            console.error('[sensortrigger] skeleton.navigation missing');
         }
     },
 
     // ----------------------------------------------------------------------
-    // ЗАГРУЗКА ТС ИЗ PILOT
+    // ЗАГРУЗКА ТС С УЛУЧШЕННЫМ ПАРСИНГОМ
     // ----------------------------------------------------------------------
     loadVehicles: function() {
         var me = this;
@@ -101,9 +93,25 @@ Ext.define('Store.sensortrigger.Module', {
             url: '/ax/tree.php',
             params: { vehs: 1, state: 1 },
             success: function(response) {
-                var data = Ext.decode(response.responseText);
-                var vehicles = me.flattenVehicleTree(data);
-                console.log('[sensortrigger] loaded vehicles:', vehicles.length);
+                console.log('[sensortrigger] /ax/tree.php response status:', response.status);
+                var rawData;
+                try {
+                    rawData = Ext.decode(response.responseText);
+                    console.log('[sensortrigger] raw data sample:', JSON.stringify(rawData).substring(0, 500));
+                } catch(e) {
+                    console.error('[sensortrigger] JSON decode error', e);
+                    Ext.Msg.alert('Ошибка', 'Не удалось разобрать ответ сервера');
+                    return;
+                }
+
+                var vehicles = me.flattenVehicleTreeImproved(rawData);
+                console.log('[sensortrigger] parsed vehicles count:', vehicles.length);
+
+                if (vehicles.length === 0) {
+                    // Покажем предупреждение с примером данных для диагностики
+                    Ext.Msg.alert('Внимание', 'Не найдено транспортных средств. Убедитесь, что в системе есть ТС.\nОтвет сервера: ' + JSON.stringify(rawData).substring(0, 200));
+                    return;
+                }
 
                 me.vehiclesStore = Ext.create('Ext.data.Store', {
                     fields: ['vehid', 'name', 'vin', 'model', 'year'],
@@ -122,40 +130,43 @@ Ext.define('Store.sensortrigger.Module', {
                         { sensor_id: 'door_status_' + v.vehid, name: 'Состояние двери' }
                     ];
                 });
-
-                if (vehicles.length === 0) {
-                    Ext.Msg.alert('Информация', 'Нет ТС в системе');
-                }
             },
-            failure: function() {
-                Ext.Msg.alert('Ошибка', 'Не удалось загрузить ТС');
-                console.error('[sensortrigger] /ax/tree.php request failed');
+            failure: function(response) {
+                console.error('[sensortrigger] /ax/tree.php failed', response);
+                Ext.Msg.alert('Ошибка', 'Не удалось загрузить ТС. Код: ' + response.status);
             }
         });
     },
 
-    flattenVehicleTree: function(nodes, result) {
+    // Улучшенный парсинг дерева (поддерживает разные форматы)
+    flattenVehicleTreeImproved: function(nodes, result) {
         result = result || [];
-        if (!Ext.isArray(nodes)) return result;
+        if (!nodes) return result;
+        if (!Ext.isArray(nodes)) nodes = [nodes];
+
         Ext.Array.each(nodes, function(node) {
-            if (node.vehid && node.vehid > 0) {
+            // Проверяем, является ли узел транспортным средством
+            // В PILOT vehid > 0 и обычно есть поле name
+            if (node.vehid && parseInt(node.vehid) > 0) {
                 result.push({
                     vehid: node.vehid,
-                    name: node.name || 'N/A',
+                    name: node.name || 'Без имени',
                     vin: node.vin || '',
                     model: node.model || '',
                     year: node.year || ''
                 });
             }
-            if (node.children && node.children.length) {
-                this.flattenVehicleTree(node.children, result);
+            // Рекурсивно обходим дочерние элементы (поле может называться children, items, nodes)
+            var children = node.children || node.items || node.nodes || [];
+            if (children.length) {
+                this.flattenVehicleTreeImproved(children, result);
             }
         }, this);
         return result;
     },
 
     // ----------------------------------------------------------------------
-    // ТОЧКИ ТРИГГЕРА (LOCALSTORAGE)
+    // ТОЧКИ ТРИГГЕРА (без изменений, работают)
     // ----------------------------------------------------------------------
     loadTriggerPoints: function() {
         var me = this;
@@ -313,13 +324,9 @@ Ext.define('Store.sensortrigger.Module', {
         };
         if (Ext.on) Ext.on('resize', resizeHandler);
         else window.addEventListener('resize', resizeHandler);
-
-        console.log('[sensortrigger] control panel created');
     },
 
-    // ----------------------------------------------------------------------
-    // КНОПКА НА КАРТЕ
-    // ----------------------------------------------------------------------
+    // Кнопка на карте
     addMapButton: function() {
         var me = this;
         var map = me.getMap();
@@ -348,15 +355,9 @@ Ext.define('Store.sensortrigger.Module', {
         if (container && container.parentNode) {
             container.parentNode.style.position = 'relative';
             container.parentNode.appendChild(btn);
-            console.log('[sensortrigger] map button added');
-        } else {
-            console.error('[sensortrigger] cannot find map container');
         }
     },
 
-    // ----------------------------------------------------------------------
-    // РАБОТА С КАРТОЙ
-    // ----------------------------------------------------------------------
     getMap: function() {
         if (window.getActiveTabMapContainer) return getActiveTabMapContainer();
         return window.mapContainer || null;
@@ -384,9 +385,6 @@ Ext.define('Store.sensortrigger.Module', {
         });
     },
 
-    // ----------------------------------------------------------------------
-    // ОКНО ДОБАВЛЕНИЯ ТОЧКИ
-    // ----------------------------------------------------------------------
     showAddTriggerWindow: function() {
         var me = this;
         var win = Ext.create('Ext.window.Window', {
@@ -448,9 +446,6 @@ Ext.define('Store.sensortrigger.Module', {
         win.show();
     },
 
-    // ----------------------------------------------------------------------
-    // СИМУЛЯЦИЯ ТРИГГЕРА
-    // ----------------------------------------------------------------------
     showSimulateWindow: function() {
         var me = this;
         if (!me.vehiclesStore || me.vehiclesStore.getCount() === 0) {
