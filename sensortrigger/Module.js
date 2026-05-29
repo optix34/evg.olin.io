@@ -1,6 +1,6 @@
 /**
  * Sensor Trigger Extension – "Позиция по меткам"
- * Исправлено: иконка вкладки fa-bluetooth-b
+ * Исправлен парсинг ТС для разных структур данных.
  */
 
 Ext.define('Store.sensortrigger.Module', {
@@ -8,14 +8,11 @@ Ext.define('Store.sensortrigger.Module', {
 
     initModule: function() {
         var me = this;
-
         console.log('[sensortrigger] initModule started');
-
         if (!window.skeleton) {
             console.error('[sensortrigger] skeleton not found');
             return;
         }
-
         me.waitForMap(function() {
             console.log('[sensortrigger] map ready');
             me.createNavigationTab();
@@ -40,12 +37,8 @@ Ext.define('Store.sensortrigger.Module', {
         check();
     },
 
-    // ----------------------------------------------------------------------
-    // ЛЕВАЯ ВКЛАДКА
-    // ----------------------------------------------------------------------
     createNavigationTab: function() {
         var me = this;
-
         me.vehicleGrid = Ext.create('Ext.grid.Panel', {
             title: 'Транспорт',
             store: Ext.create('Ext.data.Store', {
@@ -66,14 +59,12 @@ Ext.define('Store.sensortrigger.Module', {
                 }
             }
         });
-
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Позиция по меткам',
-            iconCls: 'fa fa-bluetooth-b',          // ← ИКОНКА ИЗМЕНЕНА
+            iconCls: 'fa fa-bluetooth-b',
             layout: 'fit',
             items: [me.vehicleGrid]
         });
-
         if (skeleton.navigation) {
             skeleton.navigation.add(navTab);
             console.log('[sensortrigger] navigation tab added');
@@ -82,9 +73,6 @@ Ext.define('Store.sensortrigger.Module', {
         }
     },
 
-    // ----------------------------------------------------------------------
-    // ЗАГРУЗКА ТС
-    // ----------------------------------------------------------------------
     loadVehicles: function() {
         var me = this;
 
@@ -96,18 +84,25 @@ Ext.define('Store.sensortrigger.Module', {
                 var rawData;
                 try {
                     rawData = Ext.decode(response.responseText);
-                    console.log('[sensortrigger] raw data sample:', JSON.stringify(rawData).substring(0, 500));
+                    console.log('[sensortrigger] raw data sample (first 1000 chars):', JSON.stringify(rawData).substring(0, 1000));
                 } catch(e) {
                     console.error('[sensortrigger] JSON decode error', e);
                     Ext.Msg.alert('Ошибка', 'Не удалось разобрать ответ сервера');
                     return;
                 }
 
-                var vehicles = me.flattenVehicleTreeImproved(rawData);
-                console.log('[sensortrigger] parsed vehicles count:', vehicles.length);
+                if (rawData && rawData.length > 0) {
+                    var firstItem = rawData[0];
+                    console.log('[sensortrigger] First item keys:', Object.keys(firstItem));
+                    console.log('[sensortrigger] First item sample:', JSON.stringify(firstItem).substring(0, 500));
+                }
+
+                var vehicles = me.extractVehicles(rawData);
+                console.log('[sensortrigger] extracted vehicles count:', vehicles.length);
 
                 if (vehicles.length === 0) {
-                    Ext.Msg.alert('Внимание', 'Не найдено транспортных средств. Убедитесь, что в системе есть ТС.\nОтвет сервера: ' + JSON.stringify(rawData).substring(0, 200));
+                    Ext.Msg.alert('Внимание', 'Не найдено транспортных средств.\n\n' +
+                        'Ответ сервера (первые 500 символов):\n' + JSON.stringify(rawData).substring(0, 500));
                     return;
                 }
 
@@ -135,32 +130,38 @@ Ext.define('Store.sensortrigger.Module', {
         });
     },
 
-    flattenVehicleTreeImproved: function(nodes, result) {
+    extractVehicles: function(nodes, result) {
         result = result || [];
         if (!nodes) return result;
         if (!Ext.isArray(nodes)) nodes = [nodes];
 
         Ext.Array.each(nodes, function(node) {
-            if (node.vehid && parseInt(node.vehid) > 0) {
-                result.push({
-                    vehid: node.vehid,
-                    name: node.name || 'Без имени',
-                    vin: node.vin || '',
-                    model: node.model || '',
-                    year: node.year || ''
-                });
+            // Пытаемся найти идентификатор ТС по разным полям
+            var vehid = node.vehid || node.object_id || node.id || node.vehicle_id || null;
+            if (vehid && parseInt(vehid) > 0) {
+                // Дополнительно: если есть дети, возможно это группа, а не ТС.
+                var hasChildren = node.children && node.children.length > 0;
+                // Если нет детей или явно указан тип 'vehicle' – считаем ТС
+                var isVehicle = !hasChildren || node.type === 'vehicle' || node.vehicle === true;
+                if (isVehicle) {
+                    result.push({
+                        vehid: vehid,
+                        name: node.name || 'Без имени',
+                        vin: node.vin || node.vin_number || '',
+                        model: node.model || '',
+                        year: node.year || ''
+                    });
+                }
             }
+            // Рекурсивный обход детей
             var children = node.children || node.items || node.nodes || [];
             if (children.length) {
-                this.flattenVehicleTreeImproved(children, result);
+                this.extractVehicles(children, result);
             }
         }, this);
         return result;
     },
 
-    // ----------------------------------------------------------------------
-    // ТОЧКИ ТРИГГЕРА
-    // ----------------------------------------------------------------------
     loadTriggerPoints: function() {
         var me = this;
         me.triggerPointsStore = Ext.create('Ext.data.Store', {
@@ -222,9 +223,6 @@ Ext.define('Store.sensortrigger.Module', {
         }
     },
 
-    // ----------------------------------------------------------------------
-    // ПРАВАЯ ПАНЕЛЬ
-    // ----------------------------------------------------------------------
     createControlPanel: function() {
         var me = this;
 
@@ -319,7 +317,6 @@ Ext.define('Store.sensortrigger.Module', {
         else window.addEventListener('resize', resizeHandler);
     },
 
-    // Кнопка на карте
     addMapButton: function() {
         var me = this;
         var map = me.getMap();
