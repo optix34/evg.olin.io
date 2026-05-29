@@ -1,0 +1,32 @@
+/* Стили для расширения Sensor Trigger */
+
+/* Кнопка в хедере (если потребуется) */
+.sensortrigger-header-btn {
+    background: #7c3aed !important;
+    border-color: #6d28d9 !important;
+}
+.sensortrigger-header-btn .x-btn-inner,
+.sensortrigger-header-btn .x-btn-icon-el {
+    color: #ffffff !important;
+}
+.sensortrigger-header-btn:hover {
+    background: #6d28d9 !important;
+}
+
+/* Правая панель управления */
+.sensortrigger-right-panel {
+    background: #f8fafc;
+    border-left: 1px solid #cbd5e1;
+    box-shadow: -2px 0 5px rgba(0,0,0,0.05);
+}
+
+/* Лог событий */
+.sensortrigger-log-grid .x-grid-cell {
+    font-family: monospace;
+    font-size: 12px;
+}
+
+/* Маркеры точек триггера на карте (стиль задаётся через MapContainer, здесь только пример) */
+.sensortrigger-trigger-marker {
+    /* дополнительная стилизация не требуется */
+}
