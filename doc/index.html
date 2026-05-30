@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sensor Dashboard – PILOT Extension Documentation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 2rem auto;
+            padding: 0 20px;
+            line-height: 1.6;
+        }
+        h1 { color: #2c3e50; }
+        h2 { color: #34495e; border-bottom: 1px solid #eee; padding-bottom: 0.3rem; }
+        code {
+            background: #f4f4f4;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        pre {
+            background: #f8f8f8;
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sensor Dashboard for PILOT GPS</h1>
+    <p><strong>Version:</strong> 1.0</p>
+    <p><strong>Extension name:</strong> <code>sensor_dashboard</code></p>
+
+    <h2>Description</h2>
+    <p>This extension displays all available sensors and their current values for any vehicle selected from the left navigation tree.</p>
+    <p>It uses standard PILOT endpoints:</p>
+    <ul>
+        <li><code>/ax/tree.php?vehs=1&state=1</code> – retrieves the list of vehicles (hierarchical).</li>
+        <li><code>/ax/state.php?vehid=XXX</code> – retrieves the current sensor values for a specific vehicle.</li>
+    </ul>
+
+    <h2>Features</h2>
+    <ul>
+        <li>Left panel with vehicle tree (groups + vehicles).</li>
+        <li>Dynamic grid showing all sensor keys and values.</li>
+        <li>Automatic unit formatting using PILOT helpers (<code>speedSS</code>, <code>mileageSS</code>, <code>num</code>) when available.</li>
+        <li>Refresh button to reload data for the selected vehicle.</li>
+        <li>Graceful error handling and loading indicators.</li>
+    </ul>
+
+    <h2>Installation & Hosting</h2>
+    <p>Upload the following files to a public HTTPS host (e.g., Cloudflare Pages, GitHub Pages, or your own server):</p>
+    <pre>
+sensor_dashboard/
+├── index.html
+├── Module.js
+├── style.css
+└── doc/
+    └── index.html
+    </pre>
+    <p>After uploading, verify that <code>https://YOUR-HOST/Module.js</code> is accessible. Then in PILOT Admin → Applications → Add, set:</p>
+    <ul>
+        <li><strong>Name:</strong> Sensor Dashboard</li>
+        <li><strong>URL:</strong> <code>https://YOUR-HOST/</code> (with trailing slash)</li>
+    </ul>
+    <p>Ensure the extension slug is <code>sensor_dashboard</code> (lowercase snake_case). PILOT will proxy it as <code>/store/sensor_dashboard/...</code>.</p>
+
+    <h2>Usage</h2>
+    <ol>
+        <li>After loading PILOT, click on the "Sensor Dashboard" tab in the left navigation (icon: microchip).</li>
+        <li>Expand the vehicle tree and click on any vehicle.</li>
+        <li>The main panel will display all available sensors and their current values.</li>
+        <li>Use the "Refresh" button to reload data.</li>
+    </ol>
+
+    <h2>Limitations</h2>
+    <ul>
+        <li>Sensor list depends on what <code>/ax/state.php</code> returns; not all vehicles may have the same sensors.</li>
+        <li>No historical data – only current values.</li>
+        <li>The tree may show groups/folders without vehicles; they are ignored for sensor loading.</li>
+    </ul>
+
+    <h2>Source Code & License</h2>
+    <p>This extension is provided under the Apache 2.0 license. See the main PILOT Extensions repository for details.</p>
+</body>
+</html>
