@@ -4,11 +4,11 @@
  * Нижняя часть: дашборд со статистикой по всем объектам.
  * Неактивные чекбоксы – чёрные, полупрозрачные (opacity 0.6).
  * Все элементы растянуты на всю ширину правого окна.
- * Левая вкладка – через Pilot.utils.LeftBarPanel (стандартный компонент PILOT).
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
+    // Список датчиков (колонок)
     sensors: [
         { name: 'aog', label: 'АОГ' },
         { name: 'video', label: 'Видео' },
@@ -25,15 +25,16 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        // Левая панель – стандартный компонент PILOT (без лишних линий)
-        var navTab = Ext.create('Pilot.utils.LeftBarPanel', {
+        // Левая панель с деревом ТС
+        var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
-            iconAlign: 'top',
-            minimized: true,
+            width: 320,
+            layout: 'fit',
             items: [me.createVehicleTree()]
         });
 
+        // Правая панель – вертикальное разделение
         var mainPanel = me.createMainPanel();
         navTab.map_frame = mainPanel;
 
@@ -46,6 +47,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.refreshDashboard();
     },
 
+    // Стили: чёрные полупрозрачные неактивные элементы, полная ширина
     addCustomStyles: function () {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
@@ -67,12 +69,14 @@ Ext.define('Store.sensor_dashboard.Module', {
                 width: 100% !important;
                 box-sizing: border-box !important;
             }
+            /* Каждый чекбокс – автоматическая ширина, отступы */
             .sensor-checkbox-item {
                 flex: 0 0 auto !important;
                 margin: 5px 15px 5px 0 !important;
                 background: transparent !important;
                 position: relative;
             }
+            /* Активные и неактивные чекбоксы – всегда чёрный текст */
             .sensor-dashboard-checkbox .x-form-cb-label {
                 color: #000000 !important;
                 font-weight: 600 !important;
@@ -83,7 +87,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 transform: scale(1.15) !important;
                 margin-right: 4px !important;
             }
-            /* Неактивные – чёрные, полупрозрачные */
+            /* НЕАКТИВНЫЕ (disabled) – чёрные и полупрозрачные */
             .sensor-dashboard-checkbox .x-form-field:disabled + .x-form-cb-label {
                 color: #000000 !important;
                 opacity: 0.6 !important;
@@ -91,12 +95,14 @@ Ext.define('Store.sensor_dashboard.Module', {
             .sensor-dashboard-checkbox .x-form-checkbox:disabled {
                 opacity: 0.6 !important;
             }
+            /* Иконка замка для неактивных полей */
             .sensor-checkbox-item.locked .x-form-cb-label::after {
                 content: " 🔒";
                 font-size: 11px;
                 opacity: 0.6;
                 margin-left: 4px;
             }
+            /* Панель дашборда */
             .dashboard-panel {
                 background: #ffffff !important;
                 margin: 15px 10px 10px 10px !important;
@@ -195,9 +201,11 @@ Ext.define('Store.sensor_dashboard.Module', {
         return tree;
     },
 
+    // Правая панель: верх – чекбоксы, низ – дашборд
     createMainPanel: function () {
         var me = this;
 
+        // Контейнер для чекбоксов (верх)
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
             layout: {
@@ -206,14 +214,17 @@ Ext.define('Store.sensor_dashboard.Module', {
                 pack: 'start',
                 wrap: true
             },
-            cls: 'sensors-hbox-container'
+            cls: 'sensors-hbox-container',
+            defaults: { margin: '0 15 5 0' }
         });
 
+        // Хранилище для дашборда
         var dashboardStore = Ext.create('Ext.data.Store', {
             fields: ['sensor', 'totalVehicles', 'enabledCount', 'percentage'],
             data: []
         });
 
+        // Грид дашборда (без скролла, все строки)
         var dashboardGrid = Ext.create('Ext.grid.Panel', {
             store: dashboardStore,
             cls: 'dashboard-grid',
@@ -266,9 +277,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             },
             tbar: tbar,
             items: [
-                fieldContainer,
-                { xtype: 'component', height: 10 },
-                dashboardPanel
+                fieldContainer,      // верхняя часть – чекбоксы
+                { xtype: 'component', height: 10 }, // небольшой отступ
+                dashboardPanel       // нижняя часть – дашборд
             ],
             cls: 'sensor-dashboard-container'
         });
@@ -281,6 +292,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         return mainPanel;
     },
 
+    // Загрузка настроек для выбранного ТС
     loadConfigForVehicle: function (vehid, vehicleName) {
         var me = this;
         var container = me.mainPanel.sensorsContainer;
@@ -303,6 +315,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 disabled: true,
                 cls: 'sensor-dashboard-checkbox'
             });
+            // Оборачиваем для добавления класса замка
             var wrapper = Ext.create('Ext.container.Container', {
                 cls: 'sensor-checkbox-item',
                 items: [checkbox],
@@ -352,6 +365,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
     },
 
+    // Обновление дашборда по всем ТС
     refreshDashboard: function () {
         var me = this;
         var store = me.mainPanel.dashboardStore;
