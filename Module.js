@@ -1,8 +1,8 @@
 /**
  * Sensor Dashboard Extension for PILOT
- * Displays all sensors and their current values for selected vehicle.
+ * Displays all sensors for selected vehicle.
  * Uses POST to /backend/ax/current_data.php
- * Includes full response logging and adaptive parsing.
+ * Extracts sensor data from objects array.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -171,9 +171,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         return mainPanel;
     },
 
-    /**
-     * Main method to load sensors. Logs full response and adapts to various structures.
-     */
     loadSensors: function (vehid, vehicleName) {
         var me = this;
         var mainPanel = me.mainPanel;
@@ -200,91 +197,67 @@ Ext.define('Store.sensor_dashboard.Module', {
                 try {
                     data = Ext.decode(response.responseText);
                 } catch (e) {
-                    console.error('JSON decode error', e);
                     Ext.Msg.alert(l('Error'), l('Invalid JSON response'));
                     me.showEmptySensors();
                     return;
                 }
 
-                // Логируем полный ответ в консоль для отладки
-                console.log('[SensorDashboard] Full response from current_data.php:', data);
-                console.log('[SensorDashboard] Response type:', typeof data);
-                console.log('[SensorDashboard] Response keys:', data ? Object.keys(data) : 'null');
+                // 1. Проверяем наличие массива objects
+                if (!data.objects || !Ext.isArray(data.objects) || data.objects.length === 0) {
+                    me.showEmptySensors();
+                    return;
+                }
 
-                // Автоматическое извлечение объекта с датчиками
-                var sensors = null;
-
-                if (data && typeof data === 'object') {
-                    // Вариант 1: data.data
-                    if (data.data && typeof data.data === 'object') {
-                        sensors = data.data;
-                        console.log('[SensorDashboard] Using data.data');
-                    }
-                    // Вариант 2: data.result
-                    else if (data.result && typeof data.result === 'object') {
-                        sensors = data.result;
-                        console.log('[SensorDashboard] Using data.result');
-                    }
-                    // Вариант 3: data.items
-                    else if (data.items && typeof data.items === 'object') {
-                        sensors = data.items;
-                        console.log('[SensorDashboard] Using data.items');
-                    }
-                    // Вариант 4: data.sensors
-                    else if (data.sensors && typeof data.sensors === 'object') {
-                        sensors = data.sensors;
-                        console.log('[SensorDashboard] Using data.sensors');
-                    }
-                    // Вариант 5: весь ответ, исключая служебные поля
-                    else {
-                        var candidates = {};
-                        for (var key in data) {
-                            if (data.hasOwnProperty(key) && 
-                                key !== 'success' && 
-                                key !== 'message' && 
-                                key !== 'error' && 
-                                key !== 'status' &&
-                                key !== 'code') {
-                                candidates[key] = data[key];
-                            }
-                        }
-                        if (Object.keys(candidates).length > 0) {
-                            sensors = candidates;
-                            console.log('[SensorDashboard] Using filtered top-level keys');
-                        }
+                // 2. Ищем объект с нужным vehid
+                var foundObject = null;
+                for (var i = 0; i < data.objects.length; i++) {
+                    var obj = data.objects[i];
+                    if (obj.vehid === vehid || obj.id === vehid || obj.object_id === vehid) {
+                        foundObject = obj;
+                        break;
                     }
                 }
 
-                // Если датчики найдены и не пустые
-                if (sensors && Object.keys(sensors).length > 0) {
-                    var records = [];
-                    for (var key in sensors) {
-                        if (sensors.hasOwnProperty(key)) {
-                            var value = sensors[key];
-                            // Если значение само объект, пробуем сериализовать
-                            if (typeof value === 'object') {
-                                value = JSON.stringify(value);
-                            }
+                if (!foundObject) {
+                    me.showEmptySensors();
+                    return;
+                }
+
+                // 3. Извлекаем поля-датчики (исключая служебные)
+                var excludeKeys = ['id', 'vehid', 'object_id', 'name', 'model', 'year', 'lat', 'lon', 'plate', 'icon', 'route', 'track'];
+                var records = [];
+                for (var key in foundObject) {
+                    if (foundObject.hasOwnProperty(key) && excludeKeys.indexOf(key) === -1) {
+                        var value = foundObject[key];
+                        if (value !== null && value !== undefined && value !== '') {
                             records.push({ name: key, value: value });
                         }
                     }
+                }
+
+                if (records.length === 0) {
+                    // Если датчиков нет, показываем все доступные поля (кроме слишком больших)
+                    for (var key in foundObject) {
+                        if (foundObject.hasOwnProperty(key) && key !== 'route' && key !== 'track') {
+                            records.push({ name: key, value: foundObject[key] });
+                        }
+                    }
+                }
+
+                if (records.length > 0) {
                     grid.getStore().loadData(records);
                     label.setText(vehicleName);
-                    console.log('[SensorDashboard] Loaded ' + records.length + ' sensors');
                 } else {
-                    // Ничего не нашли – показываем сырой ответ для диагностики
-                    console.warn('[SensorDashboard] Could not extract sensors from response', data);
                     grid.getStore().loadData([{
-                        name: '⚠️ Raw response (check console)',
-                        value: JSON.stringify(data, null, 2).substring(0, 500)
+                        name: 'No sensor data',
+                        value: 'No fields found'
                     }]);
-                    label.setText(vehicleName + ' (unexpected format)');
+                    label.setText(vehicleName + ' (no data)');
                 }
             },
-            failure: function (response) {
+            failure: function () {
                 grid.setLoading(false);
-                console.error('[SensorDashboard] Request failed', response);
-                Ext.Msg.alert(l('Error'), l('Failed to load sensor data. Status: ' + response.status));
+                Ext.Msg.alert(l('Error'), l('Failed to load sensor data.'));
                 me.showEmptySensors();
             }
         });
