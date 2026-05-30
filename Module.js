@@ -318,18 +318,14 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     setSensorsEditable: function (editable) {
         var container = this.mainPanel.sensorsContainer;
-        var me = this;
-        Ext.each(me.sensors, function (sensor) {
+        Ext.each(this.sensors, function (sensor) {
+            var wrapper = container.down('#' + sensor.name)?.ownerCt;
             var checkbox = container.down('#' + sensor.name);
             if (checkbox) {
                 checkbox.setDisabled(!editable);
-                var wrapper = checkbox.wrapper;
                 if (wrapper) {
-                    if (editable) {
-                        wrapper.removeCls('locked');
-                    } else {
-                        wrapper.addCls('locked');
-                    }
+                    if (editable) wrapper.removeCls('locked');
+                    else wrapper.addCls('locked');
                 }
             }
         });
