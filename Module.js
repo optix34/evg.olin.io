@@ -1,7 +1,9 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Без левой панели. Кнопка в хедере открывает окно с деревом ТС, чекбоксами и статистикой.
- * При открытии окна автоматически выбирается первый ТС в дереве, отображаются его чекбоксы.
+ * Верхняя часть: чекбоксы для выбранного ТС (АОГ, Видео, Табло и т.д.)
+ * Нижняя часть: дашборд со статистикой по всем объектам.
+ * Стили не конфликтуют с системными, используют стандартные классы PILOT.
+ * Левая вкладка – Pilot.utils.LeftBarPanel (требование AI_SPECS.md).
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -22,39 +24,32 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        if (skeleton && skeleton.header && skeleton.header.insert) {
-            skeleton.header.insert(5, {
-                xtype: 'button',
-                cls: 'header_tool dop-oborudovanie-header-btn',
-                iconCls: 'fa fa-microchip',
-                tooltip: 'Доп. Оборудование',
-                handler: function () { me.openMainWindow(); },
-                scope: me
-            });
-        }
+        // Левая панель – стандартный компонент PILOT (без лишних линий)
+        var navTab = Ext.create('Pilot.utils.LeftBarPanel', {
+            title: 'Доп. Оборудование',
+            iconCls: 'fa fa-microchip',
+            iconAlign: 'top',
+            minimized: true,
+            items: [me.createVehicleTree()]
+        });
 
-        me.currentVehid = null;
-        me.currentVehicleName = null;
-        me.mainWindow = null;
-        me.rightPanel = null;
+        var mainPanel = me.createMainPanel();
+        navTab.map_frame = mainPanel;
+
+        skeleton.navigation.add(navTab);
+        skeleton.mapframe.add(mainPanel);
+
+        me.mainPanel = mainPanel;
+        me.navTab = navTab;
+
+        me.refreshDashboard();
     },
 
     addCustomStyles: function () {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
+        // Стили только для нашего расширения, без глобальных переопределений
         styleEl.innerHTML = `
-            .dop-oborudovanie-header-btn {
-                background: #2563eb !important;
-                border-color: #1d4ed8 !important;
-            }
-            .dop-oborudovanie-header-btn .x-btn-inner,
-            .dop-oborudovanie-header-btn .x-btn-icon-el {
-                color: #ffffff !important;
-            }
-            .dop-oborudovanie-header-btn:hover {
-                background: #1d4ed8 !important;
-            }
-
             .sensor-checkbox-item {
                 display: inline-block;
                 margin: 5px 15px 5px 0;
@@ -80,13 +75,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             .dashboard-grid .x-grid-header {
                 background: #f5f5f5;
             }
-            .x-form-checkbox:disabled {
-                opacity: 0.6;
-            }
-            .x-form-field:disabled + .x-form-cb-label {
-                color: #000000 !important;
-                opacity: 0.6;
-            }
         `;
         document.head.appendChild(styleEl);
     },
@@ -98,7 +86,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         return origin + '/' + endpoint;
     },
 
-    // Создание дерева ТС с авто-выбором первого элемента после загрузки
     createVehicleTree: function () {
         var me = this;
         var apiUrl = me.getApiUrl('ax/tree.php');
@@ -117,9 +104,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             store: treeStore,
             rootVisible: true,
             useArrows: true,
-            title: 'Транспортные средства',
-            width: 320,
-            height: '100%',
             columns: [{
                 xtype: 'treecolumn',
                 text: 'ТС',
@@ -157,18 +141,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                             me.clearConfigForm();
                         }
                     }
-                },
-                // После загрузки данных выбираем первый узел-транспорт
-                afterrender: function() {
-                    treeStore.on('load', function() {
-                        var root = tree.getRootNode();
-                        if (!root) return;
-                        // Находим первый узел с vehid (рекурсивно)
-                        var firstVehicle = me.findFirstVehicleNode(root);
-                        if (firstVehicle) {
-                            tree.getSelectionModel().select(firstVehicle);
-                        }
-                    }, this, { single: true });
                 }
             }
         });
@@ -176,23 +148,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         return tree;
     },
 
-    // Вспомогательная функция: поиск первого узла с полем vehid
-    findFirstVehicleNode: function(node) {
-        if (node.get('vehid')) {
-            return node;
-        }
-        var childNodes = node.childNodes;
-        if (childNodes) {
-            for (var i = 0; i < childNodes.length; i++) {
-                var found = this.findFirstVehicleNode(childNodes[i]);
-                if (found) return found;
-            }
-        }
-        return null;
-    },
-
-    // Создание правой части окна (чекбоксы + дашборд)
-    createRightPanel: function () {
+    createMainPanel: function () {
         var me = this;
 
         var fieldContainer = Ext.create('Ext.container.Container', {
@@ -256,7 +212,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             ]
         });
 
-        var rightPanel = Ext.create('Ext.panel.Panel', {
+        var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: {
                 type: 'vbox',
                 align: 'stretch'
@@ -266,70 +222,21 @@ Ext.define('Store.sensor_dashboard.Module', {
                 fieldContainer,
                 { xtype: 'component', height: 10 },
                 dashboardPanel
-            ],
-            flex: 1
+            ]
         });
 
-        rightPanel.sensorsContainer = fieldContainer;
-        rightPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
-        rightPanel.dashboardStore = dashboardStore;
-        rightPanel.dashboardGrid = dashboardGrid;
+        mainPanel.sensorsContainer = fieldContainer;
+        mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
+        mainPanel.dashboardStore = dashboardStore;
+        mainPanel.dashboardGrid = dashboardGrid;
 
-        me.rightPanel = rightPanel;
-        return rightPanel;
-    },
-
-    // Создание главного окна с разделением на две колонки
-    createMainWindow: function () {
-        var me = this;
-        var tree = me.createVehicleTree();
-        var rightPanel = me.createRightPanel();
-
-        var mainContainer = Ext.create('Ext.container.Container', {
-            layout: 'hbox',
-            items: [tree, rightPanel],
-            defaults: { border: false }
-        });
-
-        var win = Ext.create('Ext.window.Window', {
-            title: 'Доп. Оборудование',
-            iconCls: 'fa fa-microchip',
-            layout: 'fit',
-            items: [mainContainer],
-            width: 1100,
-            height: 650,
-            modal: true,
-            constrain: true,
-            closable: true,
-            resizable: true,
-            listeners: {
-                close: function () {
-                    me.mainWindow = null;
-                    me.rightPanel = null;
-                    me.currentVehid = null;
-                }
-            }
-        });
-
-        return win;
-    },
-
-    openMainWindow: function () {
-        var me = this;
-        if (me.mainWindow) {
-            me.mainWindow.show();
-            return;
-        }
-        me.mainWindow = me.createMainWindow();
-        me.mainWindow.show();
+        return mainPanel;
     },
 
     loadConfigForVehicle: function (vehid, vehicleName) {
         var me = this;
-        if (!me.rightPanel) return;
-
-        var container = me.rightPanel.sensorsContainer;
-        var label = me.rightPanel.vehicleLabel;
+        var container = me.mainPanel.sensorsContainer;
+        var label = me.mainPanel.vehicleLabel;
 
         label.setText(vehicleName);
         container.removeAll();
@@ -345,7 +252,9 @@ Ext.define('Store.sensor_dashboard.Module', {
                 labelAlign: 'right',
                 itemId: sensor.name,
                 checked: checked,
-                disabled: true
+                disabled: true,
+                // Не переопределяем системные классы, добавляем только свой для контейнера
+                labelCls: 'x-form-cb-label'  // стандартный
             });
             var wrapper = Ext.create('Ext.container.Container', {
                 cls: 'sensor-checkbox-item',
@@ -363,8 +272,7 @@ Ext.define('Store.sensor_dashboard.Module', {
     },
 
     setSensorsEditable: function (editable) {
-        if (!this.rightPanel) return;
-        var container = this.rightPanel.sensorsContainer;
+        var container = this.mainPanel.sensorsContainer;
         Ext.each(this.sensors, function (sensor) {
             var wrapper = container.down('#' + sensor.name)?.ownerCt;
             var checkbox = container.down('#' + sensor.name);
@@ -380,9 +288,9 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     saveCurrentConfig: function () {
         var me = this;
-        if (!me.currentVehid || !me.rightPanel) return;
+        if (!me.currentVehid) return;
 
-        var container = me.rightPanel.sensorsContainer;
+        var container = me.mainPanel.sensorsContainer;
         var values = {};
 
         Ext.each(me.sensors, function (sensor) {
@@ -399,23 +307,13 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     refreshDashboard: function () {
         var me = this;
-        if (!me.rightPanel) return;
-        var store = me.rightPanel.dashboardStore;
+        var store = me.mainPanel.dashboardStore;
         if (!store) return;
 
         var allVehicles = [];
-        var tree = null;
-        if (skeleton && skeleton.navigation && skeleton.navigation.online && skeleton.navigation.online.online_tree) {
-            tree = skeleton.navigation.online.online_tree;
-        } else {
-            store.loadData([]);
-            return;
-        }
-
+        var tree = me.navTab.items.get(0);
         var rootNode = tree.getRootNode();
-        if (rootNode) {
-            me.collectVehicles(rootNode, allVehicles);
-        }
+        me.collectVehicles(rootNode, allVehicles);
         var totalVehicleCount = allVehicles.length;
 
         var totals = {};
@@ -458,10 +356,9 @@ Ext.define('Store.sensor_dashboard.Module', {
     },
 
     clearConfigForm: function () {
-        if (!this.rightPanel) return;
-        var rightPanel = this.rightPanel;
-        rightPanel.sensorsContainer.removeAll();
-        rightPanel.vehicleLabel.setText('ТС не выбрано');
+        var mainPanel = this.mainPanel;
+        mainPanel.sensorsContainer.removeAll();
+        mainPanel.vehicleLabel.setText('ТС не выбрано');
         this.currentVehid = null;
         this.refreshDashboard();
     }
