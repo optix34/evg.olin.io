@@ -1,7 +1,6 @@
 /**
  * Sensor Dashboard Extension for PILOT
- * Right panel: configurable fields (АОГ, Видео, Табло, Голос, ТФ, КПП, ТХГ, ДУТ, Датчик t)
- * Values stored in localStorage per vehicle.
+ * Right panel: configurable fields with Yes/No, stored in localStorage.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -21,25 +20,24 @@ Ext.define('Store.sensor_dashboard.Module', {
     initModule: function () {
         var me = this;
 
-        // Левая панель (обычная, без Pilot.utils.LeftBarPanel)
+        // Левая панель (дерево ТС)
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Sensor Dashboard',
             iconCls: 'fa fa-microchip',
-            cls: 'pilot-leftbar-panel',
-            width: 300,
+            width: 320,
             layout: 'fit',
             items: [me.createVehicleTree()]
         });
 
+        // Правая панель (форма настроек)
         var mainPanel = me.createMainPanel();
+
+        // Связываем (требование PILOT)
         navTab.map_frame = mainPanel;
 
-        if (skeleton && skeleton.navigation) {
-            skeleton.navigation.add(navTab);
-        }
-        if (skeleton && skeleton.mapframe) {
-            skeleton.mapframe.add(mainPanel);
-        }
+        // Добавляем в интерфейс
+        skeleton.navigation.add(navTab);
+        skeleton.mapframe.add(mainPanel);
 
         me.mainPanel = mainPanel;
         me.navTab = navTab;
@@ -63,8 +61,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 extraParams: { vehs: 1, state: 1 },
                 reader: { type: 'json', rootProperty: 'children' }
             },
-            nodeParam: 'id',
-            defaultRootProperty: 'children',
             root: { expanded: true, text: 'Все ТС' }
         });
 
@@ -109,8 +105,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                             me.clearConfigForm();
                         }
                     }
-                },
-                scope: me
+                }
             }
         });
 
@@ -120,65 +115,45 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
+        // Контейнер для полей (без сложного layout)
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'configFieldsContainer',
-            layout: 'form',
-            defaults: {
-                xtype: 'radiogroup',
-                width: 300,
-                items: [
-                    { boxLabel: 'Да', name: 'option', inputValue: 'yes' },
-                    { boxLabel: 'Нет', name: 'option', inputValue: 'no' }
-                ]
-            },
-            margin: '10 10 10 10'
-        });
-
-        var applyBtn = Ext.create('Ext.button.Button', {
-            text: 'Применить',
-            handler: function () {
-                me.saveCurrentConfig();
-                me.setFieldsEditable(false);
-            },
-            scope: me
-        });
-
-        var editBtn = Ext.create('Ext.button.Button', {
-            text: 'Редактировать',
-            handler: function () {
-                me.setFieldsEditable(true);
-            },
-            scope: me
+            padding: 10,
+            defaults: { margin: '0 0 10 0' }
         });
 
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
             items: [
                 { xtype: 'label', itemId: 'vehicleNameLabel', text: 'ТС не выбрано', style: 'font-weight: bold; font-size: 14px;' },
                 '->',
-                applyBtn,
-                editBtn
+                {
+                    text: 'Редактировать',
+                    handler: function () { me.setFieldsEditable(true); }
+                },
+                {
+                    text: 'Применить',
+                    handler: function () {
+                        me.saveCurrentConfig();
+                        me.setFieldsEditable(false);
+                    }
+                }
             ]
         });
 
         var mainPanel = Ext.create('Ext.panel.Panel', {
-            layout: 'fit',
             tbar: tbar,
             items: [fieldContainer]
         });
 
         mainPanel.fieldContainer = fieldContainer;
         mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
-        mainPanel.applyBtn = applyBtn;
-        mainPanel.editBtn = editBtn;
-
         return mainPanel;
     },
 
     loadConfigForVehicle: function (vehid, vehicleName) {
         var me = this;
-        var mainPanel = me.mainPanel;
-        var container = mainPanel.fieldContainer;
-        var label = mainPanel.vehicleLabel;
+        var container = me.mainPanel.fieldContainer;
+        var label = me.mainPanel.vehicleLabel;
 
         label.setText(vehicleName);
 
@@ -186,11 +161,13 @@ Ext.define('Store.sensor_dashboard.Module', {
         var saved = localStorage.getItem(storageKey);
         var values = saved ? JSON.parse(saved) : {};
 
-        var items = [];
+        // Удаляем старые поля
+        container.removeAll();
+
+        // Создаём поля динамически
         Ext.each(me.configFields, function (field) {
             var checkedValue = values[field.name] === 'yes' ? 'yes' : 'no';
-            items.push({
-                xtype: 'radiogroup',
+            var radioGroup = Ext.create('Ext.form.RadioGroup', {
                 fieldLabel: field.label,
                 itemId: field.name,
                 width: 350,
@@ -200,10 +177,8 @@ Ext.define('Store.sensor_dashboard.Module', {
                 ],
                 disabled: true
             });
+            container.add(radioGroup);
         });
-
-        container.removeAll();
-        container.add(items);
 
         me.currentVehid = vehid;
         me.currentVehicleName = vehicleName;
@@ -242,20 +217,5 @@ Ext.define('Store.sensor_dashboard.Module', {
         mainPanel.fieldContainer.removeAll();
         mainPanel.vehicleLabel.setText('ТС не выбрано');
         this.currentVehid = null;
-    },
-
-    getSelectedVehicle: function () {
-        var tree = this.navTab.items.get(0);
-        var selection = tree.getSelectionModel().getSelection();
-        if (selection && selection.length) {
-            var rec = selection[0];
-            if (rec.get('vehid')) {
-                return {
-                    vehid: rec.get('vehid'),
-                    name: rec.get('name')
-                };
-            }
-        }
-        return null;
     }
 });
