@@ -1,8 +1,7 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Без левой панели. Кнопка в хедере открывает окно с деревом ТС, чекбоксами и статистикой.
- * При открытии окна автоматически выбирается первый ТС в дереве и загружаются его настройки.
- * Полностью соответствует паттерну E (AI_SPECS.md).
+ * При открытии окна автоматически выбирается первый ТС в дереве, отображаются его чекбоксы.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -23,7 +22,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        // Кнопка в хедере (паттерн E)
         if (skeleton && skeleton.header && skeleton.header.insert) {
             skeleton.header.insert(5, {
                 xtype: 'button',
@@ -39,7 +37,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.currentVehicleName = null;
         me.mainWindow = null;
         me.rightPanel = null;
-        me.treePanel = null;
     },
 
     addCustomStyles: function () {
@@ -101,8 +98,9 @@ Ext.define('Store.sensor_dashboard.Module', {
         return origin + '/' + endpoint;
     },
 
-    // Создание дерева ТС
-    createVehicleTree: function (me) {
+    // Создание дерева ТС с авто-выбором первого элемента после загрузки
+    createVehicleTree: function () {
+        var me = this;
         var apiUrl = me.getApiUrl('ax/tree.php');
 
         var treeStore = Ext.create('Ext.data.TreeStore', {
@@ -159,17 +157,18 @@ Ext.define('Store.sensor_dashboard.Module', {
                             me.clearConfigForm();
                         }
                     }
-                }
-            }
-        });
-
-        // После загрузки данных дерева автоматически выбрать первый ТС
-        treeStore.on('load', function () {
-            var rootNode = treeStore.getRootNode();
-            if (rootNode && rootNode.childNodes && rootNode.childNodes.length > 0) {
-                var firstVehicle = me.findFirstVehicleNode(rootNode);
-                if (firstVehicle) {
-                    tree.getSelectionModel().select(firstVehicle);
+                },
+                // После загрузки данных выбираем первый узел-транспорт
+                afterrender: function() {
+                    treeStore.on('load', function() {
+                        var root = tree.getRootNode();
+                        if (!root) return;
+                        // Находим первый узел с vehid (рекурсивно)
+                        var firstVehicle = me.findFirstVehicleNode(root);
+                        if (firstVehicle) {
+                            tree.getSelectionModel().select(firstVehicle);
+                        }
+                    }, this, { single: true });
                 }
             }
         });
@@ -177,8 +176,8 @@ Ext.define('Store.sensor_dashboard.Module', {
         return tree;
     },
 
-    // Вспомогательный метод для поиска первого узла с vehid
-    findFirstVehicleNode: function (node) {
+    // Вспомогательная функция: поиск первого узла с полем vehid
+    findFirstVehicleNode: function(node) {
         if (node.get('vehid')) {
             return node;
         }
@@ -192,8 +191,10 @@ Ext.define('Store.sensor_dashboard.Module', {
         return null;
     },
 
-    // Создание правой панели (чекбоксы + дашборд)
-    createRightPanel: function (me) {
+    // Создание правой части окна (чекбоксы + дашборд)
+    createRightPanel: function () {
+        var me = this;
+
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
             layout: {
@@ -274,18 +275,19 @@ Ext.define('Store.sensor_dashboard.Module', {
         rightPanel.dashboardStore = dashboardStore;
         rightPanel.dashboardGrid = dashboardGrid;
 
+        me.rightPanel = rightPanel;
         return rightPanel;
     },
 
     // Создание главного окна с разделением на две колонки
     createMainWindow: function () {
         var me = this;
-        me.treePanel = me.createVehicleTree(me);
-        me.rightPanel = me.createRightPanel(me);
+        var tree = me.createVehicleTree();
+        var rightPanel = me.createRightPanel();
 
         var mainContainer = Ext.create('Ext.container.Container', {
             layout: 'hbox',
-            items: [me.treePanel, me.rightPanel],
+            items: [tree, rightPanel],
             defaults: { border: false }
         });
 
@@ -304,7 +306,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 close: function () {
                     me.mainWindow = null;
                     me.rightPanel = null;
-                    me.treePanel = null;
                     me.currentVehid = null;
                 }
             }
@@ -402,7 +403,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var store = me.rightPanel.dashboardStore;
         if (!store) return;
 
-        // Собираем все vehid из основного дерева PILOT (для полной статистики)
         var allVehicles = [];
         var tree = null;
         if (skeleton && skeleton.navigation && skeleton.navigation.online && skeleton.navigation.online.online_tree) {
