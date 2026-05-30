@@ -1,0 +1,9 @@
+/* Optional custom styles for Sensor Dashboard */
+.sensor-dashboard-grid .x-grid-cell {
+    padding: 4px 6px;
+}
+
+/* Ensure refresh button looks consistent */
+.x-btn-icon-el.fa-refresh {
+    font-size: 14px;
+}
