@@ -1,8 +1,7 @@
 /**
  * Sensor Dashboard Extension for PILOT
  * Top: configurable checkboxes for selected vehicle (AOG, Video, ...)
- * Bottom: dashboard with totals per column across all vehicles (moved lower).
- * Disabled fields show lock icon, editable fields show no lock.
+ * Bottom: dashboard table (full height without scroll) + chart (Highcharts).
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -93,9 +92,17 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             .dashboard-panel {
                 background: #ffffff !important;
-                margin: 20px 10px 10px 10px !important;  /* увеличен верхний отступ */
+                margin: 10px 10px 10px 10px !important;
                 border-radius: 6px !important;
                 box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important;
+            }
+            .dashboard-grid {
+                /* убираем фиксированную высоту, чтобы строки были все видны */
+                height: auto !important;
+            }
+            .dashboard-grid .x-grid-view {
+                overflow-y: auto;
+                max-height: 280px;
             }
             .dashboard-grid .x-grid-cell {
                 font-size: 13px !important;
@@ -233,8 +240,16 @@ Ext.define('Store.sensor_dashboard.Module', {
                 stripeRows: true,
                 emptyText: 'Нет данных'
             },
-            height: 250,
+            height: 'auto',
             margin: 5
+        });
+
+        // Контейнер для диаграммы Highcharts
+        var chartContainer = Ext.create('Ext.container.Container', {
+            itemId: 'chartContainer',
+            height: 300,
+            margin: '10 5 10 5',
+            html: '<div id="sensor-dashboard-chart" style="width:100%; height:100%;"></div>'
         });
 
         var dashboardPanel = Ext.create('Ext.panel.Panel', {
@@ -242,6 +257,15 @@ Ext.define('Store.sensor_dashboard.Module', {
             cls: 'dashboard-panel',
             layout: 'fit',
             items: [dashboardGrid],
+            collapsible: true,
+            collapsed: false
+        });
+
+        var chartPanel = Ext.create('Ext.panel.Panel', {
+            title: 'График активности датчиков',
+            cls: 'dashboard-panel',
+            layout: 'fit',
+            items: [chartContainer],
             collapsible: true,
             collapsed: false
         });
@@ -273,8 +297,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             tbar: tbar,
             items: [
                 fieldContainer,
-                { xtype: 'component', height: 10 }, // дополнительный отступ
-                dashboardPanel
+                { xtype: 'component', height: 10 },
+                dashboardPanel,
+                chartPanel
             ]
         });
 
@@ -282,6 +307,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
         mainPanel.dashboardStore = dashboardStore;
         mainPanel.dashboardGrid = dashboardGrid;
+        mainPanel.chartContainer = chartContainer;
 
         return mainPanel;
     },
@@ -405,6 +431,90 @@ Ext.define('Store.sensor_dashboard.Module', {
             });
         });
         store.loadData(data);
+
+        // Обновляем диаграмму Highcharts
+        me.renderChart(data, vehicleCount);
+    },
+
+    renderChart: function(data, totalVehicles) {
+        var me = this;
+        if (!window.Highcharts) {
+            console.warn('Highcharts not loaded');
+            return;
+        }
+        var container = document.getElementById('sensor-dashboard-chart');
+        if (!container) {
+            // Если контейнер ещё не создан, подождём
+            Ext.defer(function() { me.renderChart(data, totalVehicles); }, 100);
+            return;
+        }
+        var categories = [];
+        var percentages = [];
+        Ext.each(data, function(item) {
+            categories.push(item.sensor);
+            percentages.push(item.percentage);
+        });
+        if (window.Highcharts.charts && window.Highcharts.charts[0]) {
+            window.Highcharts.charts[0].destroy();
+        }
+        Highcharts.chart(container, {
+            chart: {
+                type: 'bar',
+                backgroundColor: '#ffffff',
+                style: { fontFamily: 'Segoe UI, Tahoma, sans-serif' }
+            },
+            title: {
+                text: 'Процент оснащённости датчиками',
+                style: { fontWeight: 'bold', fontSize: '14px' }
+            },
+            xAxis: {
+                categories: categories,
+                title: { text: 'Датчики' }
+            },
+            yAxis: {
+                title: { text: 'Процент (%)' },
+                min: 0,
+                max: 100,
+                labels: { format: '{value}%' }
+            },
+            tooltip: {
+                pointFormat: '<b>{point.y}%</b><br/>Включено: {point.enabled} из {point.total} ТС',
+                shared: false
+            },
+            plotOptions: {
+                bar: {
+                    dataLabels: {
+                        enabled: true,
+                        format: '{y}%',
+                        style: { fontWeight: 'bold', color: '#1e466e' }
+                    },
+                    colorByPoint: true,
+                    colors: ['#2c7fb8', '#2c7fb8', '#2c7fb8', '#2c7fb8', '#2c7fb8', '#2c7fb8', '#2c7fb8', '#2c7fb8', '#2c7fb8']
+                }
+            },
+            series: [{
+                name: 'Активность',
+                data: percentages,
+                point: {
+                    events: {
+                        mouseOver: function(e) {
+                            // можно добавить подсветку
+                        }
+                    }
+                },
+                tooltip: {
+                    pointFormatter: function() {
+                        var idx = this.x;
+                        var sensorData = data[idx];
+                        return '<b>' + sensorData.sensor + '</b><br/>' +
+                               'Включено: ' + sensorData.enabledCount + ' из ' + sensorData.totalVehicles +
+                               '<br/>Процент: ' + sensorData.percentage + '%';
+                    }
+                }
+            }],
+            credits: { enabled: false },
+            legend: { enabled: false }
+        });
     },
 
     collectVehicles: function(node, array) {
