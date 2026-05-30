@@ -1,69 +1,91 @@
 /**
  * Sensor Dashboard Extension for PILOT
- * Displays all sensors and their current values for a selected vehicle.
- *
- * @version 2.0.0
- * @author Your Name
- *
- * @class Store.sensor_dashboard.Module
- * @extends Ext.Component
+ * Displays all sensors and their current values for selected vehicle.
+ * Follows AI_SPECS.md strictly.
+ * FIXED: All API calls use window.location.origin to avoid proxy path issues.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
     /**
-     * The main entry point for the extension, called by the PILOT runtime.
-     * @param {Object} config The configuration object.
+     * Required entry point called by PILOT runtime.
      */
-    initModule: function (config) {
-        const me = this;
+    initModule: function () {
+        var me = this;
 
-        // 1. Create the left navigation panel with the vehicle tree
-        const navPanel = me.createNavPanel();
+        // 1. Create left navigation tab (vehicle tree)
+        var navTab = Ext.create('Pilot.utils.LeftBarPanel', {
+            title: l('Sensor Dashboard'),
+            iconCls: 'fa fa-microchip',
+            iconAlign: 'top',
+            minimized: true,
+            items: [me.createVehicleTree()]
+        });
 
-        // 2. Create the main content panel
-        const mainPanel = me.createMainPanel();
+        // 2. Create main panel (sensor display)
+        var mainPanel = me.createMainPanel();
 
-        // 3. Link the navigation panel to the main panel (required by PILOT)
-        navPanel.map_frame = mainPanel;
+        // 3. Link navigation tab with main panel (required pattern)
+        navTab.map_frame = mainPanel;
 
-        // 4. Add both components to the main PILOT interface
-        skeleton.navigation.add(navPanel);
+        // 4. Add components to PILOT skeleton
+        skeleton.navigation.add(navTab);
         skeleton.mapframe.add(mainPanel);
+
+        // 5. Store references for later use
+        me.mainPanel = mainPanel;
+        me.navTab = navTab;
     },
 
     /**
-     * Creates the left navigation panel with the vehicle tree.
-     * @return {Pilot.utils.LeftBarPanel} The navigation panel.
+     * Helper: builds absolute API URL using current origin.
+     * @param {String} endpoint e.g. 'ax/tree.php'
+     * @return {String} full URL
      */
-    createNavPanel: function () {
-        const me = this;
+    getApiUrl: function (endpoint) {
+        var origin = window.location.origin;
+        // Remove trailing slash from origin if present
+        if (origin.substr(-1) === '/') {
+            origin = origin.slice(0, -1);
+        }
+        // Ensure endpoint does not start with slash
+        if (endpoint.charAt(0) === '/') {
+            endpoint = endpoint.substr(1);
+        }
+        return origin + '/' + endpoint;
+    },
 
-        // Create the store for the vehicle tree
-        const vehicleStore = Ext.create('Ext.data.TreeStore', {
+    /**
+     * Creates the tree panel that displays vehicles from /ax/tree.php
+     * @return {Ext.tree.Panel}
+     */
+    createVehicleTree: function () {
+        var me = this;
+        var apiUrl = me.getApiUrl('ax/tree.php');
+
+        var treeStore = Ext.create('Ext.data.TreeStore', {
             proxy: {
                 type: 'ajax',
-                url: '/backend/ax/current_data.php', // Используем правильный API для загрузки списка
-                method: 'POST', // В соответствии с вашим запросом
+                url: apiUrl,
                 extraParams: {
-                    // Здесь могут потребоваться параметры, если они нужны для получения списка объектов.
-                    // Например, 'cmd': 'list' или что-то подобное. 
-                    // Если запрос без параметров не работает, добавьте их по аналогии с датчиками.
+                    vehs: 1,
+                    state: 1
                 },
                 reader: {
                     type: 'json',
-                    rootProperty: 'data' // Предполагаем, что список машин лежит в поле 'data'
+                    rootProperty: 'children' // PILOT returns groups as root array with children
                 }
             },
+            nodeParam: 'id',
+            defaultRootProperty: 'children',
             root: {
                 expanded: true,
                 text: l('All Vehicles')
             }
         });
 
-        // Create the tree panel
-        const treePanel = Ext.create('Ext.tree.Panel', {
-            store: vehicleStore,
+        var tree = Ext.create('Ext.tree.Panel', {
+            store: treeStore,
             rootVisible: true,
             useArrows: true,
             columns: [{
@@ -75,91 +97,100 @@ Ext.define('Store.sensor_dashboard.Module', {
                 text: l('Model'),
                 dataIndex: 'model',
                 flex: 1,
-                renderer: (value) => value || '—'
+                renderer: function (v) { return v || '—'; }
             }, {
                 text: l('Year'),
                 dataIndex: 'year',
                 flex: 1,
-                renderer: (value) => value || '—'
+                renderer: function (v) { return v || '—'; }
             }],
             listeners: {
-                selectionchange: (selModel, selected) => {
+                selectionchange: function (selModel, selected) {
                     if (selected && selected.length) {
-                        const record = selected[0];
+                        var record = selected[0];
+                        // Only load sensors if the selected node is a vehicle (has vehid)
                         if (record.get('vehid')) {
-                            me.loadSensorsForVehicle(record.get('vehid'), record.get('name'));
+                            me.loadSensors(record.get('vehid'), record.get('name'));
                         } else {
-                            me.clearSensorDisplay(l('Select a vehicle'));
+                            // Group/folder selected – show placeholder
+                            me.mainPanel.down('#sensorGrid').getStore().removeAll();
+                            me.mainPanel.down('#vehicleNameLabel').setText(l('Select a vehicle'));
                         }
-                    } else {
-                        me.clearSensorDisplay(l('No vehicle selected'));
                     }
                 },
                 scope: me
             }
         });
 
-        // Wrap the tree in a LeftBarPanel as required by PILOT
-        return Ext.create('Pilot.utils.LeftBarPanel', {
-            title: l('Sensor Dashboard'),
-            iconCls: 'fa fa-microchip',
-            iconAlign: 'top',
-            minimized: true,
-            items: [treePanel]
-        });
+        return tree;
     },
 
     /**
-     * Creates the main content panel to display sensor data.
-     * @return {Ext.panel.Panel} The main panel.
+     * Creates the main panel with sensor grid and refresh button.
+     * @return {Ext.panel.Panel}
      */
     createMainPanel: function () {
-        const me = this;
+        var me = this;
 
-        const sensorStore = Ext.create('Ext.data.Store', {
+        // Store for sensor data: dynamic fields name and value
+        var sensorStore = Ext.create('Ext.data.Store', {
             fields: ['name', 'value'],
             data: []
         });
 
-        const sensorGrid = Ext.create('Ext.grid.Panel', {
+        var grid = Ext.create('Ext.grid.Panel', {
+            itemId: 'sensorGrid',
             store: sensorStore,
             columns: [{
                 text: l('Sensor'),
                 dataIndex: 'name',
                 flex: 2,
-                renderer: (value) => {
-                    return Ext.String.capitalize(Ext.String.trim(value.replace(/_/g, ' ')));
+                renderer: function (v) {
+                    // Human-readable sensor name (replace underscores with spaces, capitalize)
+                    return Ext.String.capitalize(Ext.String.trim(v.replace(/_/g, ' ')));
                 }
             }, {
                 text: l('Value'),
                 dataIndex: 'value',
                 flex: 1,
-                renderer: (value, meta, record) => {
-                    const sensorName = record.get('name');
-                    // Apply PILOT formatters if they exist
+                renderer: function (v, meta, record) {
+                    var sensorName = record.get('name');
+                    // Apply PILOT formatters if available
                     if (window.speedSS && sensorName === 'speed') {
-                        return window.speedSS(value);
+                        return window.speedSS(v);
                     }
                     if (window.mileageSS && (sensorName === 'mileage' || sensorName === 'total_mileage')) {
-                        return window.mileageSS(value);
+                        return window.mileageSS(v);
                     }
                     if (window.num) {
-                        return window.num(value, 1);
+                        return window.num(v, 1);
                     }
-                    // Default formatting for common sensors
-                    if (sensorName === 'fuel_level') return `${value} %`;
-                    if (sensorName === 'temperature') return `${value} °C`;
-                    if (sensorName === 'voltage') return `${value} V`;
-                    if (sensorName === 'ignition') return value == 1 ? l('ON') : l('OFF');
-                    return value;
+                    // Default: add units where known
+                    if (sensorName === 'fuel_level') return v + ' %';
+                    if (sensorName === 'temperature') return v + ' °C';
+                    if (sensorName === 'voltage') return v + ' V';
+                    if (sensorName === 'ignition') return v == 1 ? l('ON') : l('OFF');
+                    return v;
                 }
             }],
             viewConfig: {
                 emptyText: l('Select a vehicle from the left tree to see sensors')
-            }
+            },
+            bbar: [{
+                text: l('Refresh'),
+                iconCls: 'fa fa-refresh',
+                handler: function () {
+                    var selected = me.getSelectedVehicle();
+                    if (selected && selected.vehid) {
+                        me.loadSensors(selected.vehid, selected.name);
+                    }
+                },
+                scope: me
+            }]
         });
 
-        const topToolbar = Ext.create('Ext.toolbar.Toolbar', {
+        // Top toolbar with vehicle name
+        var tbar = Ext.create('Ext.toolbar.Toolbar', {
             items: [{
                 xtype: 'label',
                 itemId: 'vehicleNameLabel',
@@ -169,116 +200,122 @@ Ext.define('Store.sensor_dashboard.Module', {
                 xtype: 'button',
                 text: l('Refresh'),
                 iconCls: 'fa fa-refresh',
-                handler: () => {
-                    const selectedVehicle = me.getSelectedVehicle();
-                    if (selectedVehicle && selectedVehicle.vehid) {
-                        me.loadSensorsForVehicle(selectedVehicle.vehid, selectedVehicle.name);
+                handler: function () {
+                    var selected = me.getSelectedVehicle();
+                    if (selected && selected.vehid) {
+                        me.loadSensors(selected.vehid, selected.name);
                     }
                 }
             }]
         });
 
-        return Ext.create('Ext.panel.Panel', {
+        var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: 'fit',
-            tbar: topToolbar,
-            items: [sensorGrid],
+            tbar: tbar,
+            items: [grid],
             listeners: {
-                afterrender: () => {
-                    me.mainPanel = this;
-                    me.sensorGrid = sensorGrid;
-                    me.vehicleLabel = topToolbar.down('#vehicleNameLabel');
-                },
-                scope: me
+                afterrender: function () {
+                    // No initial selection
+                }
             }
         });
+
+        // Store reference to grid and tbar for later updates
+        mainPanel.sensorGrid = grid;
+        mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
+
+        return mainPanel;
     },
 
     /**
-     * Loads sensor data for a specific vehicle from the API.
-     * @param {number} vehid Vehicle ID.
-     * @param {string} vehicleName Vehicle name.
+     * Load sensors for a given vehicle ID using absolute API URL.
+     * @param {Number} vehid
+     * @param {String} vehicleName
      */
-    loadSensorsForVehicle: function (vehid, vehicleName) {
-        const me = this;
-        const grid = me.sensorGrid;
-        const label = me.vehicleLabel;
+    loadSensors: function (vehid, vehicleName) {
+        var me = this;
+        var mainPanel = me.mainPanel;
+        var grid = mainPanel.sensorGrid;
+        var label = mainPanel.vehicleLabel;
 
+        // Show loading mask on grid
         grid.setLoading(true);
-        label.setText(`${vehicleName} (${l('loading...')})`);
+        label.setText(vehicleName + ' (' + l('loading...') + ')');
 
-        // Используем правильный эндпоинт и метод
+        var apiUrl = me.getApiUrl('ax/state.php');
+
         Ext.Ajax.request({
-            url: '/backend/ax/current_data.php', // Ваш правильный API
-            method: 'POST', // Метод из вашего запроса
+            url: apiUrl,
             params: {
-                vehid: vehid // Передаем ID машины, как мы делали раньше
+                vehid: vehid
             },
             timeout: 10000,
-            success: (response) => {
+            success: function (response) {
                 grid.setLoading(false);
-                let data;
+                var data;
                 try {
                     data = Ext.decode(response.responseText);
                 } catch (e) {
                     Ext.Msg.alert(l('Error'), l('Invalid server response'));
-                    me.clearSensorDisplay(vehicleName);
+                    me.showEmptySensors();
                     return;
                 }
 
                 if (data && data.success === true && data.data) {
-                    const sensors = data.data;
-                    const records = [];
-                    for (const key in sensors) {
-                        if (Object.prototype.hasOwnProperty.call(sensors, key)) {
-                            records.push({ name: key, value: sensors[key] });
+                    var sensors = data.data;
+                    // Convert object to array of {name, value}
+                    var records = [];
+                    for (var key in sensors) {
+                        if (sensors.hasOwnProperty(key)) {
+                            records.push({
+                                name: key,
+                                value: sensors[key]
+                            });
                         }
                     }
                     if (records.length === 0) {
-                        me.clearSensorDisplay(vehicleName);
+                        me.showEmptySensors();
                     } else {
                         grid.getStore().loadData(records);
                         label.setText(vehicleName);
                     }
                 } else {
-                    me.clearSensorDisplay(vehicleName);
+                    me.showEmptySensors();
                 }
             },
-            failure: () => {
+            failure: function () {
                 grid.setLoading(false);
                 Ext.Msg.alert(l('Error'), l('Failed to load sensor data. Please check network or try again.'));
-                me.clearSensorDisplay(vehicleName);
+                me.showEmptySensors();
             },
             scope: me
         });
     },
 
     /**
-     * Clears the sensor grid and resets the label.
-     * @param {string} [vehicleName] Optional vehicle name to display.
+     * Clear sensor grid and show empty message.
      */
-    clearSensorDisplay: function (vehicleName = l('No vehicle selected')) {
-        if (this.sensorGrid) {
-            this.sensorGrid.getStore().removeAll();
-        }
-        if (this.vehicleLabel) {
-            this.vehicleLabel.setText(vehicleName);
+    showEmptySensors: function () {
+        var mainPanel = this.mainPanel;
+        if (mainPanel && mainPanel.sensorGrid) {
+            mainPanel.sensorGrid.getStore().removeAll();
+            mainPanel.vehicleLabel.setText(this.getSelectedVehicle() ? this.getSelectedVehicle().name : l('No vehicle selected'));
         }
     },
 
     /**
-     * Gets the currently selected vehicle from the tree.
-     * @return {Object|null} The selected vehicle object with vehid and name, or null.
+     * Helper: get currently selected vehicle from tree.
+     * @return {Object|null} with vehid, name, etc.
      */
     getSelectedVehicle: function () {
-        const treePanel = this.navTab?.items.get(0);
-        if (!treePanel) return null;
-        const selected = treePanel.getSelectionModel().getSelection();
-        if (selected && selected.length) {
-            const record = selected[0];
-            if (record.get('vehid')) {
+        var tree = this.navTab.items.get(0); // tree is the first item
+        var selection = tree.getSelectionModel().getSelection();
+        if (selection && selection.length) {
+            var rec = selection[0];
+            if (rec.get('vehid')) {
                 return {
-                    vehid: record.get('vehid'),
-                    name: record.get('name')
+                    vehid: rec.get('vehid'),
+                    name: rec.get('name')
                 };
             }
         }
