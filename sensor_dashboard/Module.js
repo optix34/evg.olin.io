@@ -2,6 +2,7 @@
  * Sensor Dashboard Extension for PILOT
  * Displays all sensors and their current values for selected vehicle.
  * Follows AI_SPECS.md strictly.
+ * FIXED: All API calls use window.location.origin to avoid proxy path issues.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -31,9 +32,27 @@ Ext.define('Store.sensor_dashboard.Module', {
         skeleton.navigation.add(navTab);
         skeleton.mapframe.add(mainPanel);
 
-        // 5. Store reference for later use (optional)
+        // 5. Store references for later use
         me.mainPanel = mainPanel;
         me.navTab = navTab;
+    },
+
+    /**
+     * Helper: builds absolute API URL using current origin.
+     * @param {String} endpoint e.g. 'ax/tree.php'
+     * @return {String} full URL
+     */
+    getApiUrl: function (endpoint) {
+        var origin = window.location.origin;
+        // Remove trailing slash from origin if present
+        if (origin.substr(-1) === '/') {
+            origin = origin.slice(0, -1);
+        }
+        // Ensure endpoint does not start with slash
+        if (endpoint.charAt(0) === '/') {
+            endpoint = endpoint.substr(1);
+        }
+        return origin + '/' + endpoint;
     },
 
     /**
@@ -42,11 +61,12 @@ Ext.define('Store.sensor_dashboard.Module', {
      */
     createVehicleTree: function () {
         var me = this;
+        var apiUrl = me.getApiUrl('ax/tree.php');
 
         var treeStore = Ext.create('Ext.data.TreeStore', {
             proxy: {
                 type: 'ajax',
-                url: '/ax/tree.php',
+                url: apiUrl,
                 extraParams: {
                     vehs: 1,
                     state: 1
@@ -56,7 +76,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                     rootProperty: 'children' // PILOT returns groups as root array with children
                 }
             },
-            // Convert each node: if node has 'children' it's a group, else a vehicle
             nodeParam: 'id',
             defaultRootProperty: 'children',
             root: {
@@ -209,7 +228,7 @@ Ext.define('Store.sensor_dashboard.Module', {
     },
 
     /**
-     * Load sensors for a given vehicle ID.
+     * Load sensors for a given vehicle ID using absolute API URL.
      * @param {Number} vehid
      * @param {String} vehicleName
      */
@@ -223,8 +242,10 @@ Ext.define('Store.sensor_dashboard.Module', {
         grid.setLoading(true);
         label.setText(vehicleName + ' (' + l('loading...') + ')');
 
+        var apiUrl = me.getApiUrl('ax/state.php');
+
         Ext.Ajax.request({
-            url: '/ax/state.php',
+            url: apiUrl,
             params: {
                 vehid: vehid
             },
