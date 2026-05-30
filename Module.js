@@ -1,11 +1,13 @@
 /**
  * Sensor Dashboard Extension for PILOT
- * Right panel: configurable fields with Yes/No, stored in localStorage.
+ * Right panel: horizontal grid with checkboxes for each sensor (AOG, Video, etc.)
+ * Values stored in localStorage per vehicle.
  */
 Ext.define('Store.sensor_dashboard.Module', {
-    extend: 'Ext.Component',
+    extend: 'Ext.component',
 
-    configFields: [
+    // Список датчиков (колонок)
+    sensors: [
         { name: 'aog', label: 'АОГ' },
         { name: 'video', label: 'Видео' },
         { name: 'tablo', label: 'Табло' },
@@ -20,7 +22,7 @@ Ext.define('Store.sensor_dashboard.Module', {
     initModule: function () {
         var me = this;
 
-        // Левая панель (дерево ТС)
+        // Левая панель с деревом ТС
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Sensor Dashboard',
             iconCls: 'fa fa-microchip',
@@ -29,13 +31,10 @@ Ext.define('Store.sensor_dashboard.Module', {
             items: [me.createVehicleTree()]
         });
 
-        // Правая панель (форма настроек)
+        // Правая панель (горизонтальная форма)
         var mainPanel = me.createMainPanel();
-
-        // Связываем (требование PILOT)
         navTab.map_frame = mainPanel;
 
-        // Добавляем в интерфейс
         skeleton.navigation.add(navTab);
         skeleton.mapframe.add(mainPanel);
 
@@ -112,14 +111,16 @@ Ext.define('Store.sensor_dashboard.Module', {
         return tree;
     },
 
+    // Создание правой панели с горизонтальной таблицей датчиков
     createMainPanel: function () {
         var me = this;
 
-        // Контейнер для полей (без сложного layout)
+        // Контейнер для чекбоксов (будет заполнен в loadConfigForVehicle)
         var fieldContainer = Ext.create('Ext.container.Container', {
-            itemId: 'configFieldsContainer',
+            itemId: 'sensorsContainer',
+            layout: 'hbox',
             padding: 10,
-            defaults: { margin: '0 0 10 0' }
+            defaults: { margin: '0 15 0 0' }
         });
 
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
@@ -128,13 +129,13 @@ Ext.define('Store.sensor_dashboard.Module', {
                 '->',
                 {
                     text: 'Редактировать',
-                    handler: function () { me.setFieldsEditable(true); }
+                    handler: function () { me.setSensorsEditable(true); }
                 },
                 {
                     text: 'Применить',
                     handler: function () {
                         me.saveCurrentConfig();
-                        me.setFieldsEditable(false);
+                        me.setSensorsEditable(false);
                     }
                 }
             ]
@@ -145,57 +146,53 @@ Ext.define('Store.sensor_dashboard.Module', {
             items: [fieldContainer]
         });
 
-        mainPanel.fieldContainer = fieldContainer;
+        mainPanel.sensorsContainer = fieldContainer;
         mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
         return mainPanel;
     },
 
+    // Загрузить сохранённые значения для ТС и отобразить чекбоксы
     loadConfigForVehicle: function (vehid, vehicleName) {
         var me = this;
-        var container = me.mainPanel.fieldContainer;
+        var container = me.mainPanel.sensorsContainer;
         var label = me.mainPanel.vehicleLabel;
 
         label.setText(vehicleName);
+        container.removeAll();
 
         var storageKey = 'sensor_dashboard_' + vehid;
         var saved = localStorage.getItem(storageKey);
         var values = saved ? JSON.parse(saved) : {};
 
-        // Удаляем старые поля
-        container.removeAll();
-
-        // Создаём поля динамически
-        Ext.each(me.configFields, function (field) {
-            var checkedValue = values[field.name] === 'yes' ? 'yes' : 'no';
-            var radioGroup = Ext.create('Ext.form.RadioGroup', {
-                fieldLabel: field.label,
-                itemId: field.name,
-                width: 350,
-                items: [
-                    { boxLabel: 'Да', name: 'option', inputValue: 'yes', checked: checkedValue === 'yes' },
-                    { boxLabel: 'Нет', name: 'option', inputValue: 'no', checked: checkedValue === 'no' }
-                ],
-                disabled: true
+        // Для каждого датчика создаём чекбокс
+        Ext.each(me.sensors, function (sensor) {
+            var checked = (values[sensor.name] === 'yes');
+            var checkbox = Ext.create('Ext.form.field.Checkbox', {
+                fieldLabel: sensor.label,
+                labelAlign: 'top',
+                itemId: sensor.name,
+                checked: checked,
+                disabled: true   // после загрузки поля заблокированы
             });
-            container.add(radioGroup);
+            container.add(checkbox);
         });
 
         me.currentVehid = vehid;
         me.currentVehicleName = vehicleName;
     },
 
+    // Сохранить текущее состояние чекбоксов
     saveCurrentConfig: function () {
         var me = this;
         if (!me.currentVehid) return;
 
-        var container = me.mainPanel.fieldContainer;
+        var container = me.mainPanel.sensorsContainer;
         var values = {};
 
-        Ext.each(me.configFields, function (field) {
-            var radioGroup = container.down('#' + field.name);
-            if (radioGroup) {
-                var selected = radioGroup.getValue();
-                values[field.name] = (selected && selected.option === 'yes') ? 'yes' : 'no';
+        Ext.each(me.sensors, function (sensor) {
+            var checkbox = container.down('#' + sensor.name);
+            if (checkbox) {
+                values[sensor.name] = checkbox.checked ? 'yes' : 'no';
             }
         });
 
@@ -204,17 +201,19 @@ Ext.define('Store.sensor_dashboard.Module', {
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
     },
 
-    setFieldsEditable: function (editable) {
-        var container = this.mainPanel.fieldContainer;
-        Ext.each(this.configFields, function (field) {
-            var comp = container.down('#' + field.name);
-            if (comp) comp.setDisabled(!editable);
+    // Блокировка / разблокировка чекбоксов
+    setSensorsEditable: function (editable) {
+        var container = this.mainPanel.sensorsContainer;
+        Ext.each(this.sensors, function (sensor) {
+            var checkbox = container.down('#' + sensor.name);
+            if (checkbox) checkbox.setDisabled(!editable);
         });
     },
 
+    // Очистить форму при выборе папки (не ТС)
     clearConfigForm: function () {
         var mainPanel = this.mainPanel;
-        mainPanel.fieldContainer.removeAll();
+        mainPanel.sensorsContainer.removeAll();
         mainPanel.vehicleLabel.setText('ТС не выбрано');
         this.currentVehid = null;
     }
