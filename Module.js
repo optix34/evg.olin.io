@@ -22,6 +22,7 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     initModule: function () {
         var me = this;
+        me.allVehicles = []; // инициализируем сразу
         me.addCustomStyles();
 
         var navTab = Ext.create('Ext.panel.Panel', {
@@ -40,33 +41,23 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         me.mainPanel = mainPanel;
         me.navTab = navTab;
-        me.allVehicles = []; // будет хранить список всех ТС
     },
 
     addCustomStyles: function () {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
-            /* Общий контейнер правой панели */
             .sensor-dashboard-container {
                 background: #f9f9f9 !important;
             }
-            /* Верхний блок с чекбоксами */
             .top-checkbox-container {
                 background: #ffffff;
                 border-bottom: 1px solid #d5d8dc;
                 padding: 12px 10px;
-                margin: 0;
                 display: flex;
                 flex-wrap: wrap;
                 align-items: center;
-                justify-content: flex-start;
                 gap: 12px 20px;
-            }
-            /* Стиль каждого чекбокса */
-            .sensor-checkbox {
-                background: transparent;
-                white-space: nowrap;
             }
             .sensor-checkbox .x-form-cb-label {
                 color: #2c3e50 !important;
@@ -76,34 +67,18 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             .sensor-checkbox .x-form-checkbox {
                 transform: scale(1.1);
-                margin-right: 3px;
             }
-            /* Неактивные чекбоксы – яркие, читаемые */
             .sensor-checkbox .x-form-checkbox:disabled {
                 opacity: 0.9 !important;
                 background-color: #eef2f7 !important;
                 border-color: #b0c4de !important;
             }
-            /* Нижний грид */
             .vehicles-grid {
-                margin-top: 0;
                 border-top: 1px solid #d5d8dc;
             }
-            .vehicles-grid .x-grid-cell {
-                font-size: 12px;
-            }
-            /* Тулубар */
             .sensor-dashboard-container .x-toolbar {
                 background: #f0f2f5 !important;
                 border-bottom: 1px solid #d5d8dc !important;
-                padding: 6px 10px !important;
-            }
-            .sensor-dashboard-container .x-btn {
-                font-weight: 600 !important;
-            }
-            .lock-icon {
-                margin-left: 10px;
-                font-size: 14px;
             }
         `;
         document.head.appendChild(styleEl);
@@ -172,52 +147,47 @@ Ext.define('Store.sensor_dashboard.Module', {
                         }
                     }
                 },
-                load: function(store, records) {
-                    // После загрузки дерева собираем всех ТС для нижнего грида
-                    me.collectAllVehicles(store.getRootNode());
-                    me.refreshAllVehiclesGrid();
-                },
                 scope: me
             }
         });
 
-        // Первоначальная загрузка дерева
+        // Загружаем дерево и собираем все ТС
         treeStore.load({
             callback: function() {
+                me.allVehicles = [];
                 me.collectAllVehicles(treeStore.getRootNode());
                 me.refreshAllVehiclesGrid();
-            }
+            },
+            scope: me
         });
 
         return tree;
     },
 
-    // Сбор всех ТС (vehid, name) из дерева
-    collectAllVehicles: function(node) {
+    collectAllVehicles: function (node) {
         var me = this;
         if (!node) return;
-        if (node.get('vehid')) {
+        if (node.get && node.get('vehid')) {
             me.allVehicles.push({
                 vehid: node.get('vehid'),
                 name: node.get('name')
             });
         }
         var childNodes = node.childNodes;
-        if (childNodes) {
-            Ext.each(childNodes, function(child) {
+        if (childNodes && childNodes.length) {
+            Ext.each(childNodes, function (child) {
                 me.collectAllVehicles(child);
             });
         }
     },
 
-    // Обновить нижнюю таблицу со всеми ТС и их конфигурациями
-    refreshAllVehiclesGrid: function() {
+    refreshAllVehiclesGrid: function () {
         var me = this;
         var grid = me.allVehiclesGrid;
         if (!grid) return;
 
         var data = [];
-        Ext.each(me.allVehicles, function(vehicle) {
+        Ext.each(me.allVehicles, function (vehicle) {
             var storageKey = 'sensor_dashboard_' + vehicle.vehid;
             var saved = localStorage.getItem(storageKey);
             var values = saved ? JSON.parse(saved) : {};
@@ -225,7 +195,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 vehid: vehicle.vehid,
                 name: vehicle.name
             };
-            Ext.each(me.sensors, function(sensor) {
+            Ext.each(me.sensors, function (sensor) {
                 record[sensor.name] = (values[sensor.name] === 'yes') ? 'Да' : 'Нет';
             });
             data.push(record);
@@ -236,35 +206,35 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        // Верхний контейнер для чекбоксов
         var topContainer = Ext.create('Ext.container.Container', {
             cls: 'top-checkbox-container',
-            itemId: 'topCheckboxContainer',
-            layout: {
-                type: 'hbox',
-                wrap: true
-            }
+            itemId: 'topCheckboxContainer'
         });
 
-        // Нижний грид для всех ТС
+        // Формируем колонки для грида (без Ext.map)
+        var gridColumns = [
+            { text: 'ТС', dataIndex: 'name', flex: 2, sortable: true }
+        ];
+        for (var i = 0; i < me.sensors.length; i++) {
+            gridColumns.push({
+                text: me.sensors[i].label,
+                dataIndex: me.sensors[i].name,
+                flex: 0.8,
+                align: 'center'
+            });
+        }
+
         var gridStore = Ext.create('Ext.data.Store', {
-            fields: ['vehid', 'name'].concat(Ext.pluck(me.sensors, 'name'))
+            fields: ['vehid', 'name'].concat(Ext.Array.map(me.sensors, function(s) { return s.name; }))
         });
         var grid = Ext.create('Ext.grid.Panel', {
             cls: 'vehicles-grid',
             store: gridStore,
-            columns: [
-                { text: 'ТС', dataIndex: 'name', flex: 2, sortable: true },
-                { text: 'Метка BLE', dataIndex: 'ibutton', flex: 1, hidden: true }, // не используем, можно скрыть
-                { text: 'Год', dataIndex: 'year', flex: 1, hidden: true }
-            ].concat(Ext.map(me.sensors, function(s) {
-                return { text: s.label, dataIndex: s.name, flex: 0.8, align: 'center' };
-            })),
+            columns: gridColumns,
             viewConfig: { stripeRows: true }
         });
         me.allVehiclesGrid = grid;
 
-        // Разделитель – панель с двумя регионами (vbox)
         var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: {
                 type: 'vbox',
@@ -272,22 +242,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             },
             tbar: me.createToolbar(),
             items: [
-                {
-                    xtype: 'container',
-                    layout: 'fit',
-                    height: 160,
-                    items: [topContainer]
-                },
-                {
-                    xtype: 'splitter',
-                    height: 5
-                },
-                {
-                    xtype: 'container',
-                    layout: 'fit',
-                    flex: 1,
-                    items: [grid]
-                }
+                { xtype: 'container', layout: 'fit', height: 160, items: [topContainer] },
+                { xtype: 'splitter', height: 5 },
+                { xtype: 'container', layout: 'fit', flex: 1, items: [grid] }
             ]
         });
 
@@ -317,14 +274,14 @@ Ext.define('Store.sensor_dashboard.Module', {
                         me.saveCurrentConfig();
                         me.setSensorsEditable(false);
                         me.updateLockIcon(false);
-                        me.refreshAllVehiclesGrid(); // обновить нижнюю таблицу
+                        me.refreshAllVehiclesGrid();
                     }
                 }
             ]
         });
     },
 
-    updateLockIcon: function(isEditing) {
+    updateLockIcon: function (isEditing) {
         var lockIcon = this.mainPanel.lockIcon;
         if (lockIcon) {
             lockIcon.setText(isEditing ? '🔓' : '🔒');
@@ -343,7 +300,8 @@ Ext.define('Store.sensor_dashboard.Module', {
         var saved = localStorage.getItem(storageKey);
         var values = saved ? JSON.parse(saved) : {};
 
-        Ext.each(me.sensors, function (sensor) {
+        for (var i = 0; i < me.sensors.length; i++) {
+            var sensor = me.sensors[i];
             var checked = (values[sensor.name] === 'yes');
             var checkbox = Ext.create('Ext.form.field.Checkbox', {
                 fieldLabel: sensor.label,
@@ -354,7 +312,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 cls: 'sensor-checkbox'
             });
             container.add(checkbox);
-        });
+        }
 
         me.currentVehid = vehid;
         me.currentVehicleName = vehicleName;
@@ -368,12 +326,13 @@ Ext.define('Store.sensor_dashboard.Module', {
         var container = me.mainPanel.topContainer;
         var values = {};
 
-        Ext.each(me.sensors, function (sensor) {
+        for (var i = 0; i < me.sensors.length; i++) {
+            var sensor = me.sensors[i];
             var checkbox = container.down('#' + sensor.name);
             if (checkbox) {
                 values[sensor.name] = checkbox.checked ? 'yes' : 'no';
             }
-        });
+        }
 
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
         localStorage.setItem(storageKey, JSON.stringify(values));
@@ -382,10 +341,10 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     setSensorsEditable: function (editable) {
         var container = this.mainPanel.topContainer;
-        Ext.each(this.sensors, function (sensor) {
-            var checkbox = container.down('#' + sensor.name);
+        for (var i = 0; i < this.sensors.length; i++) {
+            var checkbox = container.down('#' + this.sensors[i].name);
             if (checkbox) checkbox.setDisabled(!editable);
-        });
+        }
     },
 
     clearTopForm: function () {
