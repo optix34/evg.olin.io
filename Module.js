@@ -1,54 +1,23 @@
 /**
  * Sensor Dashboard Extension for PILOT
- * Displays all sensors for selected vehicle.
- * Uses POST to /backend/ax/current_data.php
- * Left tree columns: Vehicle name, IButton label, Year.
- * Right grid: sensor description (Russian) and value.
+ * Right panel: configurable fields (АОГ, Видео, Табло, Голос, ТФ, КПП, ТХГ, ДУТ, Датчик t)
+ * Values are stored in localStorage per vehicle.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
-    // Словарь для расшифровки названий датчиков
-    sensorNames: {
-        // Двигатель и ходовые параметры
-        speed: 'Скорость',
-        engine_speed: 'Обороты двигателя',
-        engine_hours: 'Моточасы',
-        total_mileage: 'Общий пробег',
-        mileage: 'Пробег',
-        odometer: 'Одометр',
-        // Топливо
-        fuel_level: 'Уровень топлива',
-        fuel_consumption: 'Расход топлива',
-        fuel_used: 'Израсходовано топлива',
-        // Электрика
-        voltage: 'Напряжение бортовой сети',
-        ignition: 'Зажигание',
-        // Температуры
-        temperature: 'Температура двигателя',
-        coolant_temp: 'Температура ОЖ',
-        oil_temp: 'Температура масла',
-        ambient_temp: 'Температура салона',
-        // Давление
-        oil_pressure: 'Давление масла',
-        fuel_pressure: 'Давление топлива',
-        tire_pressure: 'Давление в шинах',
-        // Навигация и связь
-        gps_signal: 'GPS сигнал',
-        gsm_signal: 'GSM сигнал',
-        satellites: 'Спутники',
-        // Состояния
-        ignition_status: 'Статус зажигания',
-        movement_status: 'Статус движения',
-        alarm: 'Тревога',
-        alarm_status: 'Статус тревоги',
-        // Дополнительные
-        driver_id: 'ID водителя',
-        trailer_connected: 'Прицеп подключен',
-        battery_voltage: 'Напряжение АКБ',
-        backup_battery: 'Резервная батарея',
-        // Если поле не найдено в словаре, будет показано исходное имя с преобразованием
-    },
+    // Список полей для настройки (ключ, отображаемый текст)
+    configFields: [
+        { name: 'aog', label: 'АОГ' },
+        { name: 'video', label: 'Видео' },
+        { name: 'tablo', label: 'Табло' },
+        { name: 'voice', label: 'Голос' },
+        { name: 'tf', label: 'ТФ' },
+        { name: 'kpp', label: 'КПП' },
+        { name: 'thg', label: 'ТХГ' },
+        { name: 'dut', label: 'ДУТ' },
+        { name: 'temp_sensor', label: 'Датчик t' }
+    ],
 
     initModule: function () {
         var me = this;
@@ -130,10 +99,9 @@ Ext.define('Store.sensor_dashboard.Module', {
                     if (selected && selected.length) {
                         var record = selected[0];
                         if (record.get('vehid')) {
-                            me.loadSensors(record.get('vehid'), record.get('name'));
+                            me.loadConfigForVehicle(record.get('vehid'), record.get('name'));
                         } else {
-                            me.mainPanel.down('#sensorGrid').getStore().removeAll();
-                            me.mainPanel.down('#vehicleNameLabel').setText(l('Select a vehicle'));
+                            me.clearConfigForm();
                         }
                     }
                 },
@@ -144,211 +112,136 @@ Ext.define('Store.sensor_dashboard.Module', {
         return tree;
     },
 
-    // Вспомогательная функция для получения понятного названия датчика
-    getSensorDisplayName: function (sensorKey) {
-        var key = sensorKey.toLowerCase();
-        if (this.sensorNames[key]) {
-            return this.sensorNames[key];
-        }
-        // Если нет в словаре, делаем красивое преобразование: speed -> Speed, fuel_level -> Fuel level
-        return Ext.String.capitalize(Ext.String.trim(key.replace(/_/g, ' ')));
-    },
-
+    // Создание правой панели с формой
     createMainPanel: function () {
         var me = this;
 
-        var sensorStore = Ext.create('Ext.data.Store', {
-            fields: ['name', 'displayName', 'value'],
-            data: []
+        var fieldContainer = Ext.create('Ext.container.Container', {
+            itemId: 'configFieldsContainer',
+            layout: 'form',
+            defaults: {
+                xtype: 'radiogroup',
+                width: 300,
+                items: [
+                    { boxLabel: 'Да', name: 'option', inputValue: 'yes' },
+                    { boxLabel: 'Нет', name: 'option', inputValue: 'no' }
+                ]
+            },
+            margin: '10 10 10 10'
         });
 
-        var grid = Ext.create('Ext.grid.Panel', {
-            itemId: 'sensorGrid',
-            store: sensorStore,
-            columns: [{
-                text: l('Датчик'),
-                dataIndex: 'displayName',
-                flex: 2,
-                renderer: function (v, meta, record) {
-                    // Можно добавить подсказку с оригинальным именем
-                    var originalName = record.get('name');
-                    if (originalName && originalName !== v) {
-                        meta.tdAttr = 'data-qtip="' + Ext.String.htmlEncode(originalName) + '"';
-                    }
-                    return v;
-                }
-            }, {
-                text: l('Значение'),
-                dataIndex: 'value',
-                flex: 1,
-                renderer: function (v, meta, record) {
-                    var sensorName = record.get('name');
-                    // Форматирование значения
-                    if (window.speedSS && sensorName === 'speed') return window.speedSS(v);
-                    if (window.mileageSS && (sensorName === 'mileage' || sensorName === 'total_mileage')) return window.mileageSS(v);
-                    if (window.num) return window.num(v, 1);
-                    if (sensorName === 'fuel_level') return v + ' %';
-                    if (sensorName === 'temperature') return v + ' °C';
-                    if (sensorName === 'voltage') return v + ' V';
-                    if (sensorName === 'ignition') return v == 1 ? l('ON') : l('OFF');
-                    return v;
-                }
-            }],
-            viewConfig: {
-                emptyText: l('Выберите транспортное средство в левом дереве для просмотра датчиков')
+        var applyBtn = Ext.create('Ext.button.Button', {
+            text: 'Применить',
+            handler: function () {
+                me.saveCurrentConfig();
+                me.setFieldsEditable(false);
             },
-            bbar: [{
-                text: l('Обновить'),
-                iconCls: 'fa fa-refresh',
-                handler: function () {
-                    var selected = me.getSelectedVehicle();
-                    if (selected && selected.vehid) {
-                        me.loadSensors(selected.vehid, selected.name);
-                    }
-                },
-                scope: me
-            }]
+            scope: me
+        });
+
+        var editBtn = Ext.create('Ext.button.Button', {
+            text: 'Редактировать',
+            handler: function () {
+                me.setFieldsEditable(true);
+            },
+            scope: me
         });
 
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
-            items: [{
-                xtype: 'label',
-                itemId: 'vehicleNameLabel',
-                text: l('ТС не выбрано'),
-                style: 'font-weight: bold; font-size: 14px;'
-            }, '->', {
-                xtype: 'button',
-                text: l('Обновить'),
-                iconCls: 'fa fa-refresh',
-                handler: function () {
-                    var selected = me.getSelectedVehicle();
-                    if (selected && selected.vehid) {
-                        me.loadSensors(selected.vehid, selected.name);
-                    }
-                }
-            }]
+            items: [
+                { xtype: 'label', itemId: 'vehicleNameLabel', text: l('ТС не выбрано'), style: 'font-weight: bold; font-size: 14px;' },
+                '->',
+                applyBtn,
+                editBtn
+            ]
         });
 
         var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: 'fit',
             tbar: tbar,
-            items: [grid]
+            items: [fieldContainer]
         });
 
-        mainPanel.sensorGrid = grid;
+        mainPanel.fieldContainer = fieldContainer;
         mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
+        mainPanel.applyBtn = applyBtn;
+        mainPanel.editBtn = editBtn;
 
         return mainPanel;
     },
 
-    loadSensors: function (vehid, vehicleName) {
+    // Загрузить сохранённую конфигурацию для ТС и отобразить форму
+    loadConfigForVehicle: function (vehid, vehicleName) {
         var me = this;
         var mainPanel = me.mainPanel;
-        var grid = mainPanel.sensorGrid;
+        var container = mainPanel.fieldContainer;
         var label = mainPanel.vehicleLabel;
 
-        grid.setLoading(true);
-        label.setText(vehicleName + ' (' + l('загрузка...') + ')');
+        label.setText(vehicleName);
 
-        var apiUrl = me.getApiUrl('backend/ax/current_data.php');
+        var storageKey = 'sensor_dashboard_' + vehid;
+        var saved = localStorage.getItem(storageKey);
+        var values = saved ? JSON.parse(saved) : {};
 
-        Ext.Ajax.request({
-            method: 'POST',
-            url: apiUrl,
-            params: { vehid: vehid },
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-            },
-            timeout: 10000,
-            success: function (response) {
-                grid.setLoading(false);
+        var items = [];
+        Ext.each(me.configFields, function (field) {
+            var checkedValue = values[field.name] === 'yes' ? 'yes' : 'no';
+            items.push({
+                xtype: 'radiogroup',
+                fieldLabel: field.label,
+                itemId: field.name,
+                width: 350,
+                items: [
+                    { boxLabel: 'Да', name: 'option', inputValue: 'yes', checked: checkedValue === 'yes' },
+                    { boxLabel: 'Нет', name: 'option', inputValue: 'no', checked: checkedValue === 'no' }
+                ],
+                disabled: true
+            });
+        });
 
-                var data;
-                try {
-                    data = Ext.decode(response.responseText);
-                } catch (e) {
-                    Ext.Msg.alert(l('Ошибка'), l('Неверный JSON ответ'));
-                    me.showEmptySensors();
-                    return;
-                }
+        container.removeAll();
+        container.add(items);
 
-                if (!data.objects || !Ext.isArray(data.objects) || data.objects.length === 0) {
-                    me.showEmptySensors();
-                    return;
-                }
+        me.currentVehid = vehid;
+        me.currentVehicleName = vehicleName;
+    },
 
-                var foundObject = null;
-                for (var i = 0; i < data.objects.length; i++) {
-                    var obj = data.objects[i];
-                    if (obj.vehid === vehid || obj.id === vehid || obj.object_id === vehid) {
-                        foundObject = obj;
-                        break;
-                    }
-                }
+    // Сохранить текущие значения полей в localStorage
+    saveCurrentConfig: function () {
+        var me = this;
+        if (!me.currentVehid) return;
 
-                if (!foundObject) {
-                    me.showEmptySensors();
-                    return;
-                }
+        var container = me.mainPanel.fieldContainer;
+        var values = {};
 
-                // Исключаем служебные поля, которые не являются датчиками
-                var excludeKeys = ['id', 'vehid', 'object_id', 'name', 'model', 'year', 'lat', 'lon', 'plate', 'icon', 'route', 'track'];
-                var records = [];
-                for (var key in foundObject) {
-                    if (foundObject.hasOwnProperty(key) && excludeKeys.indexOf(key) === -1) {
-                        var value = foundObject[key];
-                        if (value !== null && value !== undefined && value !== '') {
-                            var displayName = me.getSensorDisplayName(key);
-                            records.push({
-                                name: key,
-                                displayName: displayName,
-                                value: value
-                            });
-                        }
-                    }
-                }
-
-                if (records.length === 0) {
-                    // Если не нашли датчиков, показываем всё, кроме слишком больших полей
-                    for (var key in foundObject) {
-                        if (foundObject.hasOwnProperty(key) && key !== 'route' && key !== 'track') {
-                            var displayName = me.getSensorDisplayName(key);
-                            records.push({
-                                name: key,
-                                displayName: displayName,
-                                value: foundObject[key]
-                            });
-                        }
-                    }
-                }
-
-                if (records.length > 0) {
-                    grid.getStore().loadData(records);
-                    label.setText(vehicleName);
-                } else {
-                    grid.getStore().loadData([{
-                        name: 'Нет данных датчиков',
-                        displayName: 'Нет данных',
-                        value: 'Не найдено полей с датчиками'
-                    }]);
-                    label.setText(vehicleName + ' (нет данных)');
-                }
-            },
-            failure: function () {
-                grid.setLoading(false);
-                Ext.Msg.alert(l('Ошибка'), l('Не удалось загрузить данные датчиков.'));
-                me.showEmptySensors();
+        Ext.each(me.configFields, function (field) {
+            var radioGroup = container.down('#' + field.name);
+            if (radioGroup) {
+                var selected = radioGroup.getValue();
+                values[field.name] = (selected && selected.option === 'yes') ? 'yes' : 'no';
             }
+        });
+
+        var storageKey = 'sensor_dashboard_' + me.currentVehid;
+        localStorage.setItem(storageKey, JSON.stringify(values));
+        Ext.Msg.alert('Сохранено', 'Настройки сохранены');
+    },
+
+    // Установить доступность полей (true – активно, false – неактивно)
+    setFieldsEditable: function (editable) {
+        var container = this.mainPanel.fieldContainer;
+        Ext.each(this.configFields, function (field) {
+            var comp = container.down('#' + field.name);
+            if (comp) comp.setDisabled(!editable);
         });
     },
 
-    showEmptySensors: function () {
+    // Очистить форму (при выборе группы)
+    clearConfigForm: function () {
         var mainPanel = this.mainPanel;
-        if (mainPanel && mainPanel.sensorGrid) {
-            mainPanel.sensorGrid.getStore().removeAll();
-            var selected = this.getSelectedVehicle();
-            mainPanel.vehicleLabel.setText(selected ? selected.name : l('ТС не выбрано'));
-        }
+        mainPanel.fieldContainer.removeAll();
+        mainPanel.vehicleLabel.setText(l('ТС не выбрано'));
+        this.currentVehid = null;
     },
 
     getSelectedVehicle: function () {
