@@ -1,7 +1,0 @@
-/* Дополнительные стили для улучшения внешнего вида */
-.marker-delete-btn {
-    cursor: pointer;
-}
-.marker-delete-btn:hover {
-    text-decoration: underline !important;
-}
