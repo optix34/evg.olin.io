@@ -1,9 +1,8 @@
 /**
- * Extension for PILOT – Additional Equipment (Доп. Оборудование)
- * Top: configurable checkboxes for selected vehicle (AOG, Video, Tablo, Voice, TF, KPP, THG, DUT, Temp sensor)
- * Bottom: dashboard with totals per column across all vehicles.
- * "Total Vehicles" column shows absolute number of all vehicles from the tree.
- * Active, crisp black text and checkboxes.
+ * Sensor Dashboard Extension for PILOT
+ * Top: configurable checkboxes for selected vehicle (AOG, Video, ...)
+ * Bottom: dashboard with totals per column across all vehicles (full height, no scroll).
+ * Disabled fields show lock icon, editable fields show no lock.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -25,7 +24,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.addCustomStyles();
 
         var navTab = Ext.create('Ext.panel.Panel', {
-            title: 'Доп. Оборудование',        // ← новое название вкладки
+            title: 'Sensor Dashboard',
             iconCls: 'fa fa-microchip',
             width: 320,
             layout: 'fit',
@@ -67,19 +66,16 @@ Ext.define('Store.sensor_dashboard.Module', {
                 background: transparent !important;
                 position: relative;
             }
-            /* Активные, чёрные, чёткие чекбоксы и текст */
             .sensor-dashboard-checkbox .x-form-cb-label {
-                color: #000000 !important;
+                color: #2c3e50 !important;
                 font-weight: 600 !important;
                 font-size: 13px !important;
                 margin-left: 6px !important;
-                text-shadow: none !important;
             }
             .sensor-dashboard-checkbox .x-form-checkbox {
                 transform: scale(1.15) !important;
                 margin-right: 4px !important;
             }
-            /* Яркий неактивный стиль (без прозрачности) */
             .sensor-checkbox-item.locked .x-form-cb-label::after {
                 content: " 🔒";
                 font-size: 11px;
@@ -92,8 +88,8 @@ Ext.define('Store.sensor_dashboard.Module', {
                 border-color: #b0c4de !important;
             }
             .sensor-dashboard-checkbox .x-form-field:disabled + .x-form-cb-label {
-                color: #000000 !important;
-                opacity: 0.9 !important;
+                color: #1a2a3a !important;
+                opacity: 1 !important;
             }
             .dashboard-panel {
                 background: #ffffff !important;
@@ -104,7 +100,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             .dashboard-grid .x-grid-cell {
                 font-size: 13px !important;
                 padding: 6px 4px !important;
-                color: #000000 !important;
             }
             .dashboard-grid .x-grid-header {
                 background: #eef2f7 !important;
@@ -117,10 +112,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             .x-btn {
                 font-weight: 600 !important;
-                color: #000000 !important;
-            }
-            .x-btn .x-btn-inner {
-                color: #000000 !important;
             }
         `;
         document.head.appendChild(styleEl);
@@ -217,6 +208,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             data: []
         });
 
+        // Грид с автоматической высотой – без скролла
         var dashboardGrid = Ext.create('Ext.grid.Panel', {
             store: dashboardStore,
             cls: 'dashboard-grid',
@@ -253,12 +245,13 @@ Ext.define('Store.sensor_dashboard.Module', {
             items: [dashboardGrid],
             collapsible: true,
             collapsed: false,
+            // высота автоматическая
             autoHeight: true
         });
 
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
             items: [
-                { xtype: 'label', itemId: 'vehicleNameLabel', text: 'ТС не выбрано', style: 'font-weight: bold; font-size: 14px; color: #000000;' },
+                { xtype: 'label', itemId: 'vehicleNameLabel', text: 'ТС не выбрано', style: 'font-weight: bold; font-size: 14px;' },
                 '->',
                 {
                     text: 'Редактировать',
@@ -386,27 +379,30 @@ Ext.define('Store.sensor_dashboard.Module', {
         var tree = me.navTab.items.get(0);
         var rootNode = tree.getRootNode();
         me.collectVehicles(rootNode, allVehicles);
-        var totalVehicleCount = allVehicles.length;
 
         var totals = {};
         Ext.each(me.sensors, function(s) { totals[s.name] = 0; });
+        var vehicleCount = 0;
 
         Ext.each(allVehicles, function(vehid) {
             var storageKey = 'sensor_dashboard_' + vehid;
             var saved = localStorage.getItem(storageKey);
-            var values = saved ? JSON.parse(saved) : {};
-            Ext.each(me.sensors, function(s) {
-                if (values[s.name] === 'yes') totals[s.name]++;
-            });
+            if (saved) {
+                var values = JSON.parse(saved);
+                Ext.each(me.sensors, function(s) {
+                    if (values[s.name] === 'yes') totals[s.name]++;
+                });
+                vehicleCount++;
+            }
         });
 
         var data = [];
         Ext.each(me.sensors, function(sensor) {
             var enabled = totals[sensor.name];
-            var percent = totalVehicleCount ? Math.round((enabled / totalVehicleCount) * 100) : 0;
+            var percent = vehicleCount ? Math.round((enabled / vehicleCount) * 100) : 0;
             data.push({
                 sensor: sensor.label,
-                totalVehicles: totalVehicleCount,
+                totalVehicles: vehicleCount,
                 enabledCount: enabled,
                 percentage: percent
             });
