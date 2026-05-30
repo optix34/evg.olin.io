@@ -5,6 +5,7 @@ Ext.define('Store.sensor_events_analyzer.Module', {
 
     // Хранилище для маркеров, созданных расширением (чтобы очищать при новых запросах)
     currentMarkers: [],
+    mainPanelRef: null, // ссылка на главную панель
 
     initModule: function () {
         var me = this;
@@ -52,6 +53,7 @@ Ext.define('Store.sensor_events_analyzer.Module', {
 
         // ========== 2. Основная панель (mapframe) ==========
         var mainPanel = this.createMainPanel();
+        this.mainPanelRef = mainPanel; // сохраняем ссылку
 
         // Связываем навигацию с основной панелью (требование AI_SPECS)
         navTab.map_frame = mainPanel;
@@ -63,6 +65,7 @@ Ext.define('Store.sensor_events_analyzer.Module', {
 
     // Создаёт TreeStore для загрузки реальных объектов из /ax/tree.php
     createTreeStore: function () {
+        var me = this; // сохраняем ссылку на модуль для использования внутри transform
         return Ext.create('Ext.data.TreeStore', {
             proxy: {
                 type: 'ajax',
@@ -91,6 +94,7 @@ Ext.define('Store.sensor_events_analyzer.Module', {
         var result = [];
         if (!Ext.isArray(items)) return result;
 
+        var me = this; // для рекурсивного вызова
         Ext.each(items, function (item) {
             var node = {
                 text: item.name || item.text,
@@ -266,13 +270,13 @@ Ext.define('Store.sensor_events_analyzer.Module', {
 
     // Возвращает запись выбранного в дереве транспортного средства (храним в mainPanel)
     getSelectedVehicleRecord: function () {
-        var mainPanel = this.getMainPanel();
+        var mainPanel = this.mainPanelRef;
         return mainPanel ? mainPanel.currentVehicle : null;
     },
 
     // Вызывается при выборе транспорта в дереве
     onVehicleSelected: function (record) {
-        var mainPanel = this.getMainPanel();
+        var mainPanel = this.mainPanelRef;
         if (!mainPanel) return;
 
         mainPanel.currentVehicle = record;
@@ -328,7 +332,7 @@ Ext.define('Store.sensor_events_analyzer.Module', {
 
     // Обработка полученных событий: обновление статистики, таблицы, сырого JSON и карты
     processEvents: function (eventsArray, vehicleRecord) {
-        var mainPanel = this.getMainPanel();
+        var mainPanel = this.mainPanelRef;
         if (!mainPanel) return;
 
         var statsContainer = mainPanel.statsContainer;
@@ -488,26 +492,9 @@ Ext.define('Store.sensor_events_analyzer.Module', {
         this.currentMarkers = [];
     },
 
-    // Вспомогательный метод для получения главной панели из skeleton.mapframe
-    getMainPanel: function () {
-        // Мы добавляли панель в skeleton.mapframe. Но лучше искать по компоненту, но проще сохранить ссылку.
-        // Так как mainPanel создаётся в initModule и добавляется, сохраним её в свойстве модуля.
-        if (!this.mainPanelRef) {
-            // Ищем среди потомков skeleton.mapframe (не очень надёжно, но для простоты)
-            var items = skeleton.mapframe.items;
-            for (var i = 0; i < items.length; i++) {
-                if (items.get(i).statsContainer) { // признак нашей панели
-                    this.mainPanelRef = items.get(i);
-                    break;
-                }
-            }
-        }
-        return this.mainPanelRef;
-    },
-
     // Сбрасывает отображение событий при ошибке
     clearEventsDisplay: function () {
-        var mainPanel = this.getMainPanel();
+        var mainPanel = this.mainPanelRef;
         if (mainPanel) {
             mainPanel.statsContainer.removeAll();
             mainPanel.statsContainer.add({
