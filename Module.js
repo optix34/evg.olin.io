@@ -1,10 +1,10 @@
 /**
  * Sensor Dashboard Extension for PILOT
- * Right panel: horizontal grid with checkboxes for each sensor (AOG, Video, etc.)
+ * Right panel: horizontal checkboxes for each sensor (AOG, Video, etc.)
  * Values stored in localStorage per vehicle.
  */
 Ext.define('Store.sensor_dashboard.Module', {
-    extend: 'Ext.component',
+    extend: 'Ext.Component',   // важно: заглавная C
 
     // Список датчиков (колонок)
     sensors: [
@@ -111,11 +111,10 @@ Ext.define('Store.sensor_dashboard.Module', {
         return tree;
     },
 
-    // Создание правой панели с горизонтальной таблицей датчиков
+    // Создание правой панели с горизонтальными чекбоксами
     createMainPanel: function () {
         var me = this;
 
-        // Контейнер для чекбоксов (будет заполнен в loadConfigForVehicle)
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
             layout: 'hbox',
@@ -151,7 +150,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         return mainPanel;
     },
 
-    // Загрузить сохранённые значения для ТС и отобразить чекбоксы
     loadConfigForVehicle: function (vehid, vehicleName) {
         var me = this;
         var container = me.mainPanel.sensorsContainer;
@@ -164,7 +162,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var saved = localStorage.getItem(storageKey);
         var values = saved ? JSON.parse(saved) : {};
 
-        // Для каждого датчика создаём чекбокс
+        // Создаём чекбоксы горизонтально
         Ext.each(me.sensors, function (sensor) {
             var checked = (values[sensor.name] === 'yes');
             var checkbox = Ext.create('Ext.form.field.Checkbox', {
@@ -172,7 +170,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 labelAlign: 'top',
                 itemId: sensor.name,
                 checked: checked,
-                disabled: true   // после загрузки поля заблокированы
+                disabled: true
             });
             container.add(checkbox);
         });
@@ -181,7 +179,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.currentVehicleName = vehicleName;
     },
 
-    // Сохранить текущее состояние чекбоксов
     saveCurrentConfig: function () {
         var me = this;
         if (!me.currentVehid) return;
@@ -201,7 +198,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
     },
 
-    // Блокировка / разблокировка чекбоксов
     setSensorsEditable: function (editable) {
         var container = this.mainPanel.sensorsContainer;
         Ext.each(this.sensors, function (sensor) {
@@ -210,7 +206,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
     },
 
-    // Очистить форму при выборе папки (не ТС)
     clearConfigForm: function () {
         var mainPanel = this.mainPanel;
         mainPanel.sensorsContainer.removeAll();
