@@ -1,7 +1,7 @@
 /**
  * Sensor Dashboard Extension for PILOT
  * Top: configurable checkboxes for selected vehicle (AOG, Video, ...)
- * Bottom: dashboard with totals per column across all vehicles.
+ * Bottom: dashboard with totals per column across all vehicles (moved lower).
  * Disabled fields show lock icon, editable fields show no lock.
  */
 Ext.define('Store.sensor_dashboard.Module', {
@@ -40,7 +40,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.mainPanel = mainPanel;
         me.navTab = navTab;
 
-        // Слушаем событие изменения данных (после сохранения) для обновления дашборда
         me.refreshDashboard();
     },
 
@@ -48,11 +47,9 @@ Ext.define('Store.sensor_dashboard.Module', {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
-            /* Общий контейнер */
             .sensor-dashboard-container {
                 background: #f9f9f9 !important;
             }
-            /* Верхняя панель с чекбоксами */
             .sensors-hbox-container {
                 display: flex !important;
                 flex-wrap: wrap !important;
@@ -79,7 +76,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 transform: scale(1.15) !important;
                 margin-right: 4px !important;
             }
-            /* Неактивное состояние – яркое, но с иконкой замка */
             .sensor-checkbox-item.locked .x-form-cb-label::after {
                 content: " 🔒";
                 font-size: 11px;
@@ -95,10 +91,9 @@ Ext.define('Store.sensor_dashboard.Module', {
                 color: #1a2a3a !important;
                 opacity: 1 !important;
             }
-            /* Нижний дашборд */
             .dashboard-panel {
                 background: #ffffff !important;
-                margin: 10px !important;
+                margin: 20px 10px 10px 10px !important;  /* увеличен верхний отступ */
                 border-radius: 6px !important;
                 box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important;
             }
@@ -110,10 +105,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 background: #eef2f7 !important;
                 font-weight: bold !important;
                 color: #1e466e !important;
-            }
-            .dashboard-total-row {
-                background: #f4f6f9 !important;
-                font-weight: bold !important;
             }
             .x-toolbar {
                 background: #f0f2f5 !important;
@@ -198,7 +189,6 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        // Верхний контейнер для чекбоксов
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
             layout: {
@@ -213,7 +203,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
         });
 
-        // Нижний дашборд (таблица статистики)
         var dashboardStore = Ext.create('Ext.data.Store', {
             fields: ['sensor', 'totalVehicles', 'enabledCount', 'percentage'],
             data: []
@@ -284,6 +273,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             tbar: tbar,
             items: [
                 fieldContainer,
+                { xtype: 'component', height: 10 }, // дополнительный отступ
                 dashboardPanel
             ]
         });
@@ -319,7 +309,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 cls: 'sensor-dashboard-checkbox',
                 listeners: {
                     afterrender: function(cmp) {
-                        // Добавляем класс с иконкой замка для неактивных полей
                         var containerDiv = cmp.getEl().up('.sensor-checkbox-item');
                         if (containerDiv && cmp.disabled) {
                             containerDiv.addCls('locked');
@@ -327,14 +316,12 @@ Ext.define('Store.sensor_dashboard.Module', {
                     }
                 }
             });
-            // Оборачиваем в контейнер для управления классом замка
             var wrapper = Ext.create('Ext.container.Container', {
                 cls: 'sensor-checkbox-item',
                 items: [checkbox],
                 margin: '0 15 0 0'
             });
             container.add(wrapper);
-            // Сохраним ссылку на wrapper для быстрого доступа
             checkbox.wrapper = wrapper;
         });
 
@@ -385,7 +372,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var store = me.mainPanel.dashboardStore;
         if (!store) return;
 
-        // Собираем всех vehid из дерева (необходимо получить список всех ТС)
         var allVehicles = [];
         var tree = me.navTab.items.get(0);
         var rootNode = tree.getRootNode();
@@ -404,8 +390,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                     if (values[s.name] === 'yes') totals[s.name]++;
                 });
                 vehicleCount++;
-            } else {
-                // Если записей нет, считаем что все 'no' – не увеличиваем счётчик
             }
         });
 
