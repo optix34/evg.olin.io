@@ -1,9 +1,8 @@
 /**
- * Sensor Dashboard Extension for PILOT
+ * Extension for PILOT: Equipment on vehicles (Оборудование на ТС)
  * Top: configurable checkboxes for selected vehicle (AOG, Video, ...)
  * Bottom: dashboard with totals per column across all vehicles.
- * "Total Vehicles" column shows absolute number of all vehicles from the tree.
- * Disabled fields show lock icon, editable fields show no lock.
+ * Disabled fields show lock icon, but remain fully bright and clear.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -24,8 +23,9 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
+        // Левая панель – новое название
         var navTab = Ext.create('Ext.panel.Panel', {
-            title: 'Sensor Dashboard',
+            title: 'Оборудование на ТС',          // переименовано
             iconCls: 'fa fa-microchip',
             width: 320,
             layout: 'fit',
@@ -77,20 +77,30 @@ Ext.define('Store.sensor_dashboard.Module', {
                 transform: scale(1.15) !important;
                 margin-right: 4px !important;
             }
+            /* Замок для неактивных полей (иконка) */
             .sensor-checkbox-item.locked .x-form-cb-label::after {
                 content: " 🔒";
                 font-size: 11px;
                 opacity: 0.7;
                 margin-left: 4px;
             }
+            /* Неактивные чекбоксы – полностью яркие, без затемнения */
             .sensor-dashboard-checkbox .x-form-checkbox:disabled {
-                opacity: 0.9 !important;
-                background-color: #eef2f7 !important;
-                border-color: #b0c4de !important;
+                opacity: 1 !important;
+                background-color: #ffffff !important;
+                border: 1px solid #b0c4de !important;
+                cursor: default !important;
             }
             .sensor-dashboard-checkbox .x-form-field:disabled + .x-form-cb-label {
                 color: #1a2a3a !important;
                 opacity: 1 !important;
+                font-weight: 600 !important;
+            }
+            /* Активные чекбоксы при редактировании */
+            .sensor-dashboard-checkbox-editable .x-form-checkbox {
+                cursor: pointer !important;
+                background-color: #ffffff !important;
+                border: 1px solid #5dade2 !important;
             }
             .dashboard-panel {
                 background: #ffffff !important;
@@ -342,8 +352,10 @@ Ext.define('Store.sensor_dashboard.Module', {
                 if (wrapper) {
                     if (editable) {
                         wrapper.removeCls('locked');
+                        checkbox.addCls('sensor-dashboard-checkbox-editable');
                     } else {
                         wrapper.addCls('locked');
+                        checkbox.removeCls('sensor-dashboard-checkbox-editable');
                     }
                 }
             }
@@ -374,37 +386,31 @@ Ext.define('Store.sensor_dashboard.Module', {
         var store = me.mainPanel.dashboardStore;
         if (!store) return;
 
-        // 1. Собрать ВСЕ идентификаторы ТС из дерева (абсолютное количество)
         var allVehicles = [];
         var tree = me.navTab.items.get(0);
         var rootNode = tree.getRootNode();
         me.collectVehicles(rootNode, allVehicles);
-        var totalVehicleCount = allVehicles.length;  // ← общее количество ТС у клиента
+        var totalVehicleCount = allVehicles.length;
 
-        // 2. Подсчитать, для каждого датчика, сколько ТС имеют "yes"
         var totals = {};
         Ext.each(me.sensors, function(s) { totals[s.name] = 0; });
 
-        // 3. Пройти по каждому ТС (даже если у него нет сохранённых настроек – считать как "no")
         Ext.each(allVehicles, function(vehid) {
             var storageKey = 'sensor_dashboard_' + vehid;
             var saved = localStorage.getItem(storageKey);
             var values = saved ? JSON.parse(saved) : {};
             Ext.each(me.sensors, function(s) {
-                if (values[s.name] === 'yes') {
-                    totals[s.name]++;
-                }
+                if (values[s.name] === 'yes') totals[s.name]++;
             });
         });
 
-        // 4. Сформировать данные для таблицы
         var data = [];
         Ext.each(me.sensors, function(sensor) {
             var enabled = totals[sensor.name];
             var percent = totalVehicleCount ? Math.round((enabled / totalVehicleCount) * 100) : 0;
             data.push({
                 sensor: sensor.label,
-                totalVehicles: totalVehicleCount,   // ← везде одинаковое общее количество ТС
+                totalVehicles: totalVehicleCount,
                 enabledCount: enabled,
                 percentage: percent
             });
