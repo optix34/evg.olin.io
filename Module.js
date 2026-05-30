@@ -1,12 +1,11 @@
 /**
  * Sensor Dashboard Extension for PILOT
  * Right panel: configurable fields (АОГ, Видео, Табло, Голос, ТФ, КПП, ТХГ, ДУТ, Датчик t)
- * Values are stored in localStorage per vehicle.
+ * Values stored in localStorage per vehicle.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
-    // Список полей для настройки (ключ, отображаемый текст)
     configFields: [
         { name: 'aog', label: 'АОГ' },
         { name: 'video', label: 'Видео' },
@@ -22,19 +21,25 @@ Ext.define('Store.sensor_dashboard.Module', {
     initModule: function () {
         var me = this;
 
-        var navTab = Ext.create('Pilot.utils.LeftBarPanel', {
-            title: l('Sensor Dashboard'),
+        // Левая панель (обычная, без Pilot.utils.LeftBarPanel)
+        var navTab = Ext.create('Ext.panel.Panel', {
+            title: 'Sensor Dashboard',
             iconCls: 'fa fa-microchip',
-            iconAlign: 'top',
-            minimized: true,
+            cls: 'pilot-leftbar-panel',
+            width: 300,
+            layout: 'fit',
             items: [me.createVehicleTree()]
         });
 
         var mainPanel = me.createMainPanel();
         navTab.map_frame = mainPanel;
 
-        skeleton.navigation.add(navTab);
-        skeleton.mapframe.add(mainPanel);
+        if (skeleton && skeleton.navigation) {
+            skeleton.navigation.add(navTab);
+        }
+        if (skeleton && skeleton.mapframe) {
+            skeleton.mapframe.add(mainPanel);
+        }
 
         me.mainPanel = mainPanel;
         me.navTab = navTab;
@@ -60,7 +65,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             },
             nodeParam: 'id',
             defaultRootProperty: 'children',
-            root: { expanded: true, text: l('All Vehicles') }
+            root: { expanded: true, text: 'Все ТС' }
         });
 
         var tree = Ext.create('Ext.tree.Panel', {
@@ -69,11 +74,11 @@ Ext.define('Store.sensor_dashboard.Module', {
             useArrows: true,
             columns: [{
                 xtype: 'treecolumn',
-                text: l('Vehicle'),
+                text: 'ТС',
                 dataIndex: 'name',
                 flex: 2
             }, {
-                text: l('Метка BLE (IButton)'),
+                text: 'Метка BLE (IButton)',
                 dataIndex: 'ibutton',
                 flex: 1,
                 renderer: function (v, meta, record) {
@@ -89,7 +94,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                     return '—';
                 }
             }, {
-                text: l('Year'),
+                text: 'Год',
                 dataIndex: 'year',
                 flex: 1,
                 renderer: function (v) { return v || '—'; }
@@ -112,7 +117,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         return tree;
     },
 
-    // Создание правой панели с формой
     createMainPanel: function () {
         var me = this;
 
@@ -149,7 +153,7 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
             items: [
-                { xtype: 'label', itemId: 'vehicleNameLabel', text: l('ТС не выбрано'), style: 'font-weight: bold; font-size: 14px;' },
+                { xtype: 'label', itemId: 'vehicleNameLabel', text: 'ТС не выбрано', style: 'font-weight: bold; font-size: 14px;' },
                 '->',
                 applyBtn,
                 editBtn
@@ -170,7 +174,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         return mainPanel;
     },
 
-    // Загрузить сохранённую конфигурацию для ТС и отобразить форму
     loadConfigForVehicle: function (vehid, vehicleName) {
         var me = this;
         var mainPanel = me.mainPanel;
@@ -206,7 +209,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.currentVehicleName = vehicleName;
     },
 
-    // Сохранить текущие значения полей в localStorage
     saveCurrentConfig: function () {
         var me = this;
         if (!me.currentVehid) return;
@@ -227,7 +229,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
     },
 
-    // Установить доступность полей (true – активно, false – неактивно)
     setFieldsEditable: function (editable) {
         var container = this.mainPanel.fieldContainer;
         Ext.each(this.configFields, function (field) {
@@ -236,11 +237,10 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
     },
 
-    // Очистить форму (при выборе группы)
     clearConfigForm: function () {
         var mainPanel = this.mainPanel;
         mainPanel.fieldContainer.removeAll();
-        mainPanel.vehicleLabel.setText(l('ТС не выбрано'));
+        mainPanel.vehicleLabel.setText('ТС не выбрано');
         this.currentVehid = null;
     },
 
