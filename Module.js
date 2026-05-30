@@ -1,8 +1,10 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Верхняя часть: чекбоксы для выбранного ТС
+ * Верхняя часть: чекбоксы для выбранного ТС (АОГ, Видео, Табло и т.д.)
  * Нижняя часть: дашборд со статистикой по всем объектам.
- * Убраны лишние разделители и отступы в верхней панели.
+ * Неактивные чекбоксы – чёрные, полупрозрачные (opacity 0.6).
+ * Все элементы растянуты на всю ширину правого окна.
+ * Левая вкладка – через Pilot.utils.LeftBarPanel (стандартный компонент PILOT).
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -23,11 +25,12 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        var navTab = Ext.create('Ext.panel.Panel', {
+        // Левая панель – стандартный компонент PILOT (без лишних линий)
+        var navTab = Ext.create('Pilot.utils.LeftBarPanel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
-            width: 320,
-            layout: 'fit',
+            iconAlign: 'top',
+            minimized: true,
             items: [me.createVehicleTree()]
         });
 
@@ -47,11 +50,12 @@ Ext.define('Store.sensor_dashboard.Module', {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
+            /* Контейнер правой панели – на всю ширину */
             .sensor-dashboard-container {
                 background: #f9f9f9 !important;
                 width: 100% !important;
             }
-            /* Убран лишний border-bottom, чтобы не было двойной линии под тулбаром */
+            /* Верхний контейнер с чекбоксами – flex, перенос, растяжение */
             .sensors-hbox-container {
                 display: flex !important;
                 flex-wrap: wrap !important;
@@ -59,6 +63,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 align-items: center !important;
                 background: #ffffff !important;
                 padding: 12px 15px !important;
+                border-bottom: 2px solid #e0e4e8 !important;
                 width: 100% !important;
                 box-sizing: border-box !important;
             }
@@ -78,6 +83,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 transform: scale(1.15) !important;
                 margin-right: 4px !important;
             }
+            /* Неактивные – чёрные, полупрозрачные */
             .sensor-dashboard-checkbox .x-form-field:disabled + .x-form-cb-label {
                 color: #000000 !important;
                 opacity: 0.6 !important;
@@ -93,7 +99,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             .dashboard-panel {
                 background: #ffffff !important;
-                margin: 5px 10px 10px 10px !important;
+                margin: 15px 10px 10px 10px !important;
                 border-radius: 6px !important;
                 box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important;
                 width: auto !important;
@@ -213,12 +219,24 @@ Ext.define('Store.sensor_dashboard.Module', {
             cls: 'dashboard-grid',
             autoHeight: true,
             scrollable: false,
-            columns: [
-                { text: 'Датчик', dataIndex: 'sensor', flex: 2 },
-                { text: 'Всего ТС', dataIndex: 'totalVehicles', flex: 1 },
-                { text: 'Включено', dataIndex: 'enabledCount', flex: 1 },
-                { text: '%', dataIndex: 'percentage', flex: 1, renderer: function(v) { return v + ' %'; } }
-            ],
+            columns: [{
+                text: 'Датчик',
+                dataIndex: 'sensor',
+                flex: 2
+            }, {
+                text: 'Всего ТС',
+                dataIndex: 'totalVehicles',
+                flex: 1
+            }, {
+                text: 'Включено',
+                dataIndex: 'enabledCount',
+                flex: 1
+            }, {
+                text: '%',
+                dataIndex: 'percentage',
+                flex: 1,
+                renderer: function(v) { return v + ' %'; }
+            }],
             viewConfig: { stripeRows: true, emptyText: 'Нет данных' }
         });
 
@@ -242,9 +260,16 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
 
         var mainPanel = Ext.create('Ext.panel.Panel', {
-            layout: { type: 'vbox', align: 'stretch' },
+            layout: {
+                type: 'vbox',
+                align: 'stretch'
+            },
             tbar: tbar,
-            items: [fieldContainer, dashboardPanel],
+            items: [
+                fieldContainer,
+                { xtype: 'component', height: 10 },
+                dashboardPanel
+            ],
             cls: 'sensor-dashboard-container'
         });
 
