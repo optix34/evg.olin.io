@@ -1,292 +1,240 @@
 /**
- * Sensor Dashboard Extension for PILOT
- * Displays all sensors for selected vehicle.
- * Uses POST to /backend/ax/current_data.php
- * Extracts sensor data from objects array.
+ * M25 Monitor — монолитное расширение PILOT.
+ * 
+ * Левая панель: таблица всех ТС клиента с полями:
+ *   Название, UniqID, Agent ID, Тип, Модель, IMEI, Скорость, Топливо, Зажигание, Метка BLE (данные от датчика IButton).
+ * 
+ * Данные для метки BLE извлекаются из датчика IButton (поиск в sensors или поле ibutton).
  */
-Ext.define('Store.sensor_dashboard.Module', {
+Ext.define('Store.m25_monitor.Module', {
     extend: 'Ext.Component',
 
-    initModule: function () {
+    extensionName: 'm25_monitor',
+
+    initModule: function() {
+        var me = this;
+        console.log('[M25] Инициализация расширения (с меткой BLE от IButton)');
+
+        if (!window.skeleton || !skeleton.navigation || !skeleton.mapframe) {
+            Ext.defer(function() { me.initModule(); }, 500, me);
+            return;
+        }
+
+        me.createNavigationTab();
+        me.loadAllVehicles();
+
+        console.log('[M25] Расширение готово');
+    },
+
+    createNavigationTab: function() {
         var me = this;
 
-        var navTab = Ext.create('Pilot.utils.LeftBarPanel', {
-            title: l('Sensor Dashboard'),
+        this.vehiclesStore = Ext.create('Ext.data.Store', {
+            fields: ['vehid', 'agent_id', 'name', 'imei', 'equipment', 'model', 'speed', 'fuel', 'ignition', 'ble_label'],
+            data: [],
+            sorters: [{ property: 'name', direction: 'ASC' }]
+        });
+
+        this.vehiclesGrid = Ext.create('Ext.grid.Panel', {
+            store: this.vehiclesStore,
+            columns: [
+                { text: 'Название', dataIndex: 'name', flex: 2, sortable: true },
+                { text: 'UniqID', dataIndex: 'vehid', width: 80, sortable: true },
+                { text: 'Agent ID', dataIndex: 'agent_id', width: 100, sortable: true, renderer: function(v) { return v || '—'; } },
+                { text: 'Тип', dataIndex: 'equipment', flex: 1.5, renderer: function(v) { return v || '—'; } },
+                { text: 'Модель', dataIndex: 'model', flex: 1.5, renderer: function(v) { return v || '—'; } },
+                { text: 'IMEI', dataIndex: 'imei', flex: 1.5, renderer: function(v) { return v || '—'; } },
+                { text: 'Скорость', dataIndex: 'speed', width: 70, renderer: function(v) { return v !== undefined ? v + ' км/ч' : '—'; } },
+                { text: 'Топливо', dataIndex: 'fuel', width: 80, renderer: function(v) { return v !== undefined ? v + ' л' : '—'; } },
+                { text: 'Зажигание', dataIndex: 'ignition', width: 80, renderer: function(v) { return v === 1 ? 'Вкл' : (v === 0 ? 'Выкл' : '—'); } },
+                { text: 'Метка BLE (IButton)', dataIndex: 'ble_label', width: 120, sortable: true, renderer: function(v) { return v || '—'; } }
+            ],
+            dockedItems: [{
+                xtype: 'toolbar',
+                dock: 'top',
+                items: [{
+                    text: 'Обновить список',
+                    iconCls: 'fa fa-sync-alt',
+                    handler: function() { me.loadAllVehicles(); },
+                    scope: me
+                }]
+            }]
+        });
+
+        this.navTab = Ext.create('Pilot.utils.LeftBarPanel', {
+            title: 'M25 Monitor',
             iconCls: 'fa fa-microchip',
             iconAlign: 'top',
             minimized: true,
-            items: [me.createVehicleTree()]
-        });
-
-        var mainPanel = me.createMainPanel();
-        navTab.map_frame = mainPanel;
-
-        skeleton.navigation.add(navTab);
-        skeleton.mapframe.add(mainPanel);
-
-        me.mainPanel = mainPanel;
-        me.navTab = navTab;
-    },
-
-    getApiUrl: function (endpoint) {
-        var origin = window.location.origin;
-        if (origin.slice(-1) === '/') origin = origin.slice(0, -1);
-        if (endpoint.charAt(0) === '/') endpoint = endpoint.slice(1);
-        return origin + '/' + endpoint;
-    },
-
-    createVehicleTree: function () {
-        var me = this;
-        var apiUrl = me.getApiUrl('ax/tree.php');
-
-        var treeStore = Ext.create('Ext.data.TreeStore', {
-            proxy: {
-                type: 'ajax',
-                url: apiUrl,
-                extraParams: { vehs: 1, state: 1 },
-                reader: { type: 'json', rootProperty: 'children' }
-            },
-            nodeParam: 'id',
-            defaultRootProperty: 'children',
-            root: { expanded: true, text: l('All Vehicles') }
-        });
-
-        var tree = Ext.create('Ext.tree.Panel', {
-            store: treeStore,
-            rootVisible: true,
-            useArrows: true,
-            columns: [{
-                xtype: 'treecolumn',
-                text: l('Vehicle'),
-                dataIndex: 'name',
-                flex: 2
-            }, {
-                text: l('Метка BLE'),          // Заменено с "Model" на "Метка BLE"
-                dataIndex: 'ble_label',        // Поле, содержащее метку BLE (может быть ble_tag, ble)
-                flex: 1,
-                renderer: function (v) {
-                    // Если поле отсутствует или пустое, пробуем другие возможные имена
-                    if (!v && this && this.data) {
-                        if (this.data.ble_tag) return this.data.ble_tag;
-                        if (this.data.ble) return this.data.ble;
-                    }
-                    return v || '—';
-                }
-            }, {
-                text: l('Year'),
-                dataIndex: 'year',
-                flex: 1,
-                renderer: function (v) { return v || '—'; }
-            }],
-            listeners: {
-                selectionchange: function (selModel, selected) {
-                    if (selected && selected.length) {
-                        var record = selected[0];
-                        if (record.get('vehid')) {
-                            me.loadSensors(record.get('vehid'), record.get('name'));
-                        } else {
-                            me.mainPanel.down('#sensorGrid').getStore().removeAll();
-                            me.mainPanel.down('#vehicleNameLabel').setText(l('Select a vehicle'));
-                        }
-                    }
-                },
-                scope: me
-            }
-        });
-
-        return tree;
-    },
-
-    createMainPanel: function () {
-        var me = this;
-
-        var sensorStore = Ext.create('Ext.data.Store', {
-            fields: ['name', 'value'],
-            data: []
-        });
-
-        var grid = Ext.create('Ext.grid.Panel', {
-            itemId: 'sensorGrid',
-            store: sensorStore,
-            columns: [{
-                text: l('Sensor'),
-                dataIndex: 'name',
-                flex: 2,
-                renderer: function (v) {
-                    return Ext.String.capitalize(Ext.String.trim(v.replace(/_/g, ' ')));
-                }
-            }, {
-                text: l('Value'),
-                dataIndex: 'value',
-                flex: 1,
-                renderer: function (v, meta, record) {
-                    var sensorName = record.get('name');
-                    if (window.speedSS && sensorName === 'speed') return window.speedSS(v);
-                    if (window.mileageSS && (sensorName === 'mileage' || sensorName === 'total_mileage')) return window.mileageSS(v);
-                    if (window.num) return window.num(v, 1);
-                    if (sensorName === 'fuel_level') return v + ' %';
-                    if (sensorName === 'temperature') return v + ' °C';
-                    if (sensorName === 'voltage') return v + ' V';
-                    if (sensorName === 'ignition') return v == 1 ? l('ON') : l('OFF');
-                    return v;
-                }
-            }],
-            viewConfig: {
-                emptyText: l('Select a vehicle from the left tree to see sensors')
-            },
-            bbar: [{
-                text: l('Refresh'),
-                iconCls: 'fa fa-refresh',
-                handler: function () {
-                    var selected = me.getSelectedVehicle();
-                    if (selected && selected.vehid) {
-                        me.loadSensors(selected.vehid, selected.name);
-                    }
-                },
-                scope: me
-            }]
-        });
-
-        var tbar = Ext.create('Ext.toolbar.Toolbar', {
-            items: [{
-                xtype: 'label',
-                itemId: 'vehicleNameLabel',
-                text: l('No vehicle selected'),
-                style: 'font-weight: bold; font-size: 14px;'
-            }, '->', {
-                xtype: 'button',
-                text: l('Refresh'),
-                iconCls: 'fa fa-refresh',
-                handler: function () {
-                    var selected = me.getSelectedVehicle();
-                    if (selected && selected.vehid) {
-                        me.loadSensors(selected.vehid, selected.name);
-                    }
-                }
-            }]
-        });
-
-        var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: 'fit',
-            tbar: tbar,
-            items: [grid]
+            items: [this.vehiclesGrid]
         });
-
-        mainPanel.sensorGrid = grid;
-        mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
-
-        return mainPanel;
+        skeleton.navigation.add(this.navTab);
     },
 
-    loadSensors: function (vehid, vehicleName) {
+    loadAllVehicles: function() {
         var me = this;
-        var mainPanel = me.mainPanel;
-        var grid = mainPanel.sensorGrid;
-        var label = mainPanel.vehicleLabel;
+        if (this.vehiclesGrid) this.vehiclesGrid.setLoading(true);
 
-        grid.setLoading(true);
-        label.setText(vehicleName + ' (' + l('loading...') + ')');
-
-        var apiUrl = me.getApiUrl('backend/ax/current_data.php');
-
+        // 1. Получаем список ТС из tree.php
         Ext.Ajax.request({
-            method: 'POST',
-            url: apiUrl,
-            params: { vehid: vehid },
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-            },
-            timeout: 10000,
-            success: function (response) {
-                grid.setLoading(false);
-
-                var data;
+            url: '/ax/tree.php',
+            params: { vehs: 1, state: 1 },
+            success: function(resp) {
+                var treeData;
                 try {
-                    data = Ext.decode(response.responseText);
-                } catch (e) {
-                    Ext.Msg.alert(l('Error'), l('Invalid JSON response'));
-                    me.showEmptySensors();
+                    treeData = Ext.decode(resp.responseText);
+                } catch(e) {
+                    console.error('[M25] Ошибка парсинга tree.php', e);
+                    me.showErrorAndFinish('Ошибка разбора данных от PILOT');
+                    return;
+                }
+                console.log('[M25] tree.php получен');
+                var nodes = me.normalizeTreeResponse(treeData);
+                var allVehicles = me.extractAllVehiclesUniversal(nodes);
+                if (allVehicles.length === 0) {
+                    me.showErrorAndFinish('Не найдено ни одного транспортного средства');
                     return;
                 }
 
-                if (!data.objects || !Ext.isArray(data.objects) || data.objects.length === 0) {
-                    me.showEmptySensors();
-                    return;
-                }
-
-                var foundObject = null;
-                for (var i = 0; i < data.objects.length; i++) {
-                    var obj = data.objects[i];
-                    if (obj.vehid === vehid || obj.id === vehid || obj.object_id === vehid) {
-                        foundObject = obj;
-                        break;
-                    }
-                }
-
-                if (!foundObject) {
-                    me.showEmptySensors();
-                    return;
-                }
-
-                var excludeKeys = ['id', 'vehid', 'object_id', 'name', 'model', 'year', 'lat', 'lon', 'plate', 'icon', 'route', 'track'];
-                var records = [];
-                for (var key in foundObject) {
-                    if (foundObject.hasOwnProperty(key) && excludeKeys.indexOf(key) === -1) {
-                        var value = foundObject[key];
-                        if (value !== null && value !== undefined && value !== '') {
-                            records.push({ name: key, value: value });
+                // 2. Получаем текущие данные (включая датчики IButton)
+                Ext.Ajax.request({
+                    url: '/ax/current_data.php',
+                    success: function(resp2) {
+                        var currentRaw;
+                        try {
+                            currentRaw = Ext.decode(resp2.responseText);
+                        } catch(e) {
+                            console.error('[M25] Ошибка парсинга current_data', e);
+                            me.showErrorAndFinish('Ошибка разбора текущих данных');
+                            return;
                         }
+                        var currentMap = me.normalizeCurrentData(currentRaw);
+                        var records = [];
+                        Ext.Array.each(allVehicles, function(veh) {
+                            var cur = currentMap[veh.vehid] || {};
+                            var bleValue = me.extractIButtonValue(cur);
+                            records.push({
+                                vehid: veh.vehid,
+                                name: veh.name,
+                                agent_id: veh.agent_id || '',
+                                equipment: veh.equipment || '',
+                                model: veh.model || '',
+                                imei: veh.imei || '',
+                                speed: cur.speed,
+                                fuel: cur.fuel,
+                                ignition: cur.ignition,
+                                ble_label: bleValue
+                            });
+                        });
+                        me.vehiclesStore.loadData(records);
+                        if (me.vehiclesGrid) me.vehiclesGrid.setLoading(false);
+                    },
+                    failure: function() {
+                        me.showErrorAndFinish('Не удалось загрузить текущие параметры');
                     }
-                }
-
-                if (records.length === 0) {
-                    for (var key in foundObject) {
-                        if (foundObject.hasOwnProperty(key) && key !== 'route' && key !== 'track') {
-                            records.push({ name: key, value: foundObject[key] });
-                        }
-                    }
-                }
-
-                if (records.length > 0) {
-                    grid.getStore().loadData(records);
-                    label.setText(vehicleName);
-                } else {
-                    grid.getStore().loadData([{
-                        name: 'No sensor data',
-                        value: 'No fields found'
-                    }]);
-                    label.setText(vehicleName + ' (no data)');
-                }
+                });
             },
-            failure: function () {
-                grid.setLoading(false);
-                Ext.Msg.alert(l('Error'), l('Failed to load sensor data.'));
-                me.showEmptySensors();
+            failure: function() {
+                me.showErrorAndFinish('Не удалось загрузить список ТС');
             }
         });
     },
 
-    showEmptySensors: function () {
-        var mainPanel = this.mainPanel;
-        if (mainPanel && mainPanel.sensorGrid) {
-            mainPanel.sensorGrid.getStore().removeAll();
-            var selected = this.getSelectedVehicle();
-            mainPanel.vehicleLabel.setText(selected ? selected.name : l('No vehicle selected'));
-        }
+    // Вспомогательный метод для вывода ошибки и снятия загрузки
+    showErrorAndFinish: function(msg) {
+        Ext.Msg.alert('Ошибка', msg);
+        if (this.vehiclesGrid) this.vehiclesGrid.setLoading(false);
     },
 
-    getSelectedVehicle: function () {
-        var tree = this.navTab.items.get(0);
-        var selection = tree.getSelectionModel().getSelection();
-        if (selection && selection.length) {
-            var rec = selection[0];
-            if (rec.get('vehid')) {
-                return {
-                    vehid: rec.get('vehid'),
-                    name: rec.get('name')
-                };
+    // Нормализация ответа tree.php в массив узлов
+    normalizeTreeResponse: function(data) {
+        if (Ext.isArray(data)) return data;
+        if (data && Ext.isObject(data)) {
+            if (data.root && Ext.isArray(data.root)) return data.root;
+            if (data.data && Ext.isArray(data.data)) return data.data;
+            if (data.children && Ext.isArray(data.children)) return data.children;
+            for (var key in data) {
+                if (Ext.isArray(data[key])) return data[key];
             }
         }
-        return null;
+        return [];
+    },
+
+    // Нормализация ответа current_data в карту { vehid: данные }
+    normalizeCurrentData: function(data) {
+        var map = {};
+        var items = [];
+        if (Ext.isArray(data)) {
+            items = data;
+        } else if (data && Ext.isObject(data)) {
+            items = data.objects || data.data || data.items || [];
+        }
+        Ext.Array.each(items, function(item) {
+            var id = item.vehid || item.id || item.unit_id;
+            if (id) map[String(id)] = item;
+        });
+        return map;
+    },
+
+    // Универсальный сбор всех ТС из дерева (без фильтрации)
+    extractAllVehiclesUniversal: function(nodes) {
+        var result = [];
+        var me = this;
+        Ext.Array.each(nodes, function(node) {
+            var isVehicle = false;
+            if (node.type === 'veh' || node.type === 'object' || node.type === 'unit' || node.type === 'item') isVehicle = true;
+            if (!isVehicle && (node.vehid || node.id || node.unit_id)) isVehicle = true;
+            if (!isVehicle && (node.speed !== undefined || node.fuel !== undefined)) isVehicle = true;
+            if (isVehicle) {
+                var vehid = node.vehid || node.id || node.unit_id;
+                if (vehid) {
+                    result.push({
+                        vehid: String(vehid),
+                        name: node.text || node.name || node.label || 'Без имени',
+                        equipment: me.extractField(node, ['equipment', 'model', 'device', 'hardware', 'devicetype', 'tracker', 'gps_type', 'type_name']),
+                        imei: me.extractField(node, ['imei', 'serial', 'device_id', 'tracker_serial', 'serial_number']),
+                        model: me.extractField(node, ['model', 'vehicle_model', 'car_model', 'model_name']),
+                        agent_id: me.extractField(node, ['agent_id', 'agentId', 'agent', 'driver_id', 'user_id', 'driver'])
+                    });
+                }
+            } else if (node.children && node.children.length) {
+                result = result.concat(me.extractAllVehiclesUniversal(node.children));
+            } else if (node.items && node.items.length) {
+                result = result.concat(me.extractAllVehiclesUniversal(node.items));
+            }
+        });
+        return result;
+    },
+
+    // Поиск значения датчика IButton / метки BLE в данных ТС
+    extractIButtonValue: function(vehicleData) {
+        if (!vehicleData) return '';
+        // 1. Прямое поле ibutton
+        if (vehicleData.ibutton) return String(vehicleData.ibutton);
+        if (vehicleData.ble_tag) return String(vehicleData.ble_tag);
+        // 2. Поиск в массиве sensors
+        var sensors = vehicleData.sensors;
+        if (Ext.isArray(sensors)) {
+            var iButtonSensor = Ext.Array.findBy(sensors, function(s) {
+                var name = (s.name || s.label || '').toLowerCase();
+                return name.indexOf('ibutton') !== -1 || name.indexOf('i-button') !== -1 || name.indexOf('ble') !== -1 || name === 'метка';
+            });
+            if (iButtonSensor && iButtonSensor.value !== undefined) {
+                return String(iButtonSensor.value);
+            }
+        }
+        // 3. Если ничего не найдено
+        return '';
+    },
+
+    extractField: function(node, fieldNames) {
+        for (var i = 0; i < fieldNames.length; i++) {
+            var val = node[fieldNames[i]];
+            if (val !== undefined && val !== null && val !== '') {
+                return String(val);
+            }
+        }
+        return '';
     }
 });
