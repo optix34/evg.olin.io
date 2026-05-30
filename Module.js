@@ -1,8 +1,7 @@
 /**
  * Sensor Dashboard Extension for PILOT
- * Right panel: horizontal checkboxes for each sensor (AOG, Video, etc.)
- * Values stored in localStorage per vehicle.
- * Enhanced contrast: black text, bold labels, crisp checkboxes.
+ * Right panel: horizontal checkboxes, full width, PILOT-like style.
+ * Disabled elements are bright and readable.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -21,8 +20,6 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     initModule: function () {
         var me = this;
-
-        // Добавляем CSS для улучшенной контрастности
         me.addCustomStyles();
 
         var navTab = Ext.create('Ext.panel.Panel', {
@@ -43,40 +40,87 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.navTab = navTab;
     },
 
-    // Добавление стилей для контрастного отображения
     addCustomStyles: function () {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
-            .sensor-dashboard-checkbox .x-form-field {
-                color: #000000 !important;
-                font-weight: 500 !important;
-                font-size: 13px !important;
-            }
-            .sensor-dashboard-checkbox .x-form-cb-label {
-                color: #000000 !important;
-                font-weight: bold !important;
-                font-size: 14px !important;
-                margin-left: 5px !important;
-            }
-            .sensor-dashboard-checkbox .x-form-checkbox {
-                transform: scale(1.1);
-                margin-right: 5px !important;
+            /* Общий контейнер правой панели */
+            .sensor-dashboard-container {
+                background: #f9f9f9 !important;
             }
             .sensor-dashboard-container .x-panel-body {
+                background: #f9f9f9 !important;
+            }
+            /* Горизонтальный контейнер чекбоксов – равномерное распределение */
+            .sensors-hbox-container {
+                display: flex !important;
+                flex-wrap: wrap !important;
+                justify-content: space-around !important;
+                align-items: flex-start !important;
+                width: 100% !important;
                 background: #ffffff !important;
+                padding: 15px 10px !important;
+                border-radius: 4px !important;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
             }
+            /* Каждый чекбокс – гибкая ширина, минимальная 100px */
+            .sensor-dashboard-checkbox {
+                flex: 1 1 100px !important;
+                min-width: 90px !important;
+                margin: 5px 8px !important;
+                background: transparent !important;
+            }
+            /* Стили для label (название датчика) */
+            .sensor-dashboard-checkbox .x-form-cb-label {
+                color: #2c3e50 !important;
+                font-weight: 600 !important;
+                font-size: 13px !important;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+                margin-left: 6px !important;
+            }
+            /* Сам чекбокс */
+            .sensor-dashboard-checkbox .x-form-checkbox {
+                transform: scale(1.15) !important;
+                margin-right: 5px !important;
+                cursor: default !important;
+            }
+            /* Неактивное состояние – яркое, но без возможности редактирования */
+            .sensor-dashboard-checkbox .x-form-checkbox:disabled {
+                opacity: 0.9 !important;
+                background-color: #eef2f7 !important;
+                border-color: #b0c4de !important;
+            }
+            .sensor-dashboard-checkbox .x-form-field:disabled + .x-form-cb-label {
+                color: #1a2a3a !important;
+                opacity: 0.85 !important;
+            }
+            /* Активное состояние при редактировании */
+            .sensor-dashboard-checkbox-editable .x-form-checkbox {
+                cursor: pointer !important;
+            }
+            /* Тулубар */
             .sensor-dashboard-container .x-toolbar {
-                background: #f5f5f5 !important;
-                border-bottom: 1px solid #ddd !important;
+                background: #f0f2f5 !important;
+                border-bottom: 1px solid #d5d8dc !important;
+                padding: 8px 10px !important;
             }
+            /* Кнопки */
             .sensor-dashboard-container .x-btn {
-                font-weight: bold !important;
+                font-weight: 600 !important;
+                background: #ffffff !important;
+                border: 1px solid #bdc3c7 !important;
+                color: #2c3e50 !important;
             }
+            .sensor-dashboard-container .x-btn:hover {
+                background: #e8f0fe !important;
+                border-color: #5dade2 !important;
+            }
+            /* Метка ТС */
             .sensor-dashboard-label {
-                color: #000000 !important;
+                color: #1a2c3e !important;
                 font-weight: bold !important;
                 font-size: 15px !important;
+                text-shadow: none !important;
             }
         `;
         document.head.appendChild(styleEl);
@@ -156,19 +200,24 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
-            layout: 'hbox',
-            padding: 10,
-            cls: 'sensor-dashboard-container',
-            defaults: { margin: '0 15 0 0' }
+            layout: {
+                type: 'hbox',
+                align: 'stretch',
+                pack: 'start',
+                wrap: true   // перенос на новую строку, если не помещаются
+            },
+            cls: 'sensors-hbox-container',
+            defaults: {
+                margin: '0 10 10 0'
+            }
         });
 
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
             items: [
-                { 
-                    xtype: 'label', 
-                    itemId: 'vehicleNameLabel', 
-                    text: 'ТС не выбрано', 
-                    style: 'font-weight: bold; font-size: 14px; color: #000000;',
+                {
+                    xtype: 'label',
+                    itemId: 'vehicleNameLabel',
+                    text: 'ТС не выбрано',
                     cls: 'sensor-dashboard-label'
                 },
                 '->',
@@ -189,7 +238,8 @@ Ext.define('Store.sensor_dashboard.Module', {
         var mainPanel = Ext.create('Ext.panel.Panel', {
             tbar: tbar,
             items: [fieldContainer],
-            cls: 'sensor-dashboard-container'
+            cls: 'sensor-dashboard-container',
+            bodyCls: 'sensor-dashboard-container'
         });
 
         mainPanel.sensorsContainer = fieldContainer;
@@ -213,7 +263,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             var checked = (values[sensor.name] === 'yes');
             var checkbox = Ext.create('Ext.form.field.Checkbox', {
                 fieldLabel: sensor.label,
-                labelAlign: 'top',
+                labelAlign: 'right',
                 itemId: sensor.name,
                 checked: checked,
                 disabled: true,
@@ -251,7 +301,14 @@ Ext.define('Store.sensor_dashboard.Module', {
         var container = this.mainPanel.sensorsContainer;
         Ext.each(this.sensors, function (sensor) {
             var checkbox = container.down('#' + sensor.name);
-            if (checkbox) checkbox.setDisabled(!editable);
+            if (checkbox) {
+                checkbox.setDisabled(!editable);
+                if (editable) {
+                    checkbox.addCls('sensor-dashboard-checkbox-editable');
+                } else {
+                    checkbox.removeCls('sensor-dashboard-checkbox-editable');
+                }
+            }
         });
     },
 
