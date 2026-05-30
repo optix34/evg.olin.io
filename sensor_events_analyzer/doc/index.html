@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sensor Events Analyzer - PILOT Extension Documentation</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.5;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: #f5f7fb;
+            color: #1e293b;
+        }
+        h1 { color: #0f3b5f; border-bottom: 2px solid #2563eb; display: inline-block; }
+        h2 { margin-top: 1.5rem; color: #1e40af; }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        code {
+            background: #e2e8f0;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+        }
+        .note {
+            background: #fef9c3;
+            border-left: 4px solid #eab308;
+            padding: 0.75rem 1rem;
+            margin: 1rem 0;
+            border-radius: 6px;
+        }
+        .warning {
+            background: #fee2e2;
+            border-left: 4px solid #dc2626;
+            padding: 0.75rem 1rem;
+            margin: 1rem 0;
+            border-radius: 6px;
+        }
+        footer {
+            margin-top: 3rem;
+            font-size: 0.8rem;
+            text-align: center;
+            color: #475569;
+            border-top: 1px solid #cbd5e1;
+            padding-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>📡 Sensor Events Analyzer</h1>
+    <p><strong>PILOT Extension</strong> – анализ срабатываний датчиков транспортных средств.</p>
+
+    <h2>📋 Возможности</h2>
+    <ul>
+        <li>Загрузка реальной иерархии объектов из PILOT (<code>/ax/tree.php</code>).</li>
+        <li>Настраиваемый API‑эндпоинт для получения событий датчиков (сохраняется в <code>localStorage</code>).</li>
+        <li>Отображение списка событий с координатами и возможностью показать на карте.</li>
+        <li>Статистика: общее количество событий, разбивка по типам датчиков, самый активный датчик.</li>
+        <li>График (столбчатая диаграмма) при наличии <code>window.Highcharts</code>.</li>
+        <li>Сырой JSON‑ответ для отладки.</li>
+        <li>Интеграция с существующей картой PILOT (Online / History).</li>
+    </ul>
+
+    <h2>⚙️ Настройка</h2>
+    <p>После установки расширения в PILOT:</p>
+    <ol>
+        <li>Откройте вкладку <strong>Sensor Events Analyzer</strong> в левой панели.</li>
+        <li>В верхней панели укажите URL для получения событий, например:
+            <code>/ax/sensor_events.php?vehid=</code> (эндпоинт должен возвращать JSON по запросу <code>?vehid=123</code>).<br>
+            Если в вашей системе такого эндпоинта нет, вы можете реализовать свой бэкенд или использовать прокси.
+        </li>
+        <li>Нажмите <strong>Save URL</strong> – настройка сохранится и будет использоваться при следующих загрузках.</li>
+        <li>Выберите транспортное средство в дереве слева – события загрузятся автоматически.</li>
+        <li>Для ручного обновления используйте кнопку <strong>Reload events</strong>.</li>
+    </ol>
+
+    <div class="note">
+        <strong>📌 Примечание:</strong> Расширение не создаёт собственных эндпоинтов – оно лишь читает данные из указанного вами URL. 
+        Формат ответа должен соответствовать ожидаемому:
+        <pre>[
+  {
+    "timestamp": "2025-03-10 14:23:45",
+    "sensor_name": "Ignition",
+    "sensor_type": "digital",
+    "value": "ON",
+    "lat": 55.751244,
+    "lon": 37.618423,
+    "event_id": 12345
+  }
+]</pre>
+    </div>
+
+    <h2>🗺️ Работа с картой</h2>
+    <p>При клике на строку события или на иконку маркера в таблице:</p>
+    <ul>
+        <li>Карта перемещается к координатам события.</li>
+        <li>Добавляется маркер с подсказкой (название датчика и значение).</li>
+        <li>Все маркеры, созданные расширением, автоматически удаляются при выборе другого транспортного средства или перезагрузке событий.</li>
+    </ul>
+
+    <h2>🔧 Требования к окружению PILOT</h2>
+    <ul>
+        <li>PILOT версии 7.7+ с загруженным Ext JS.</li>
+        <li>Наличие глобальных объектов <code>window.skeleton</code>, <code>window.getActiveTabMapContainer</code> (или <code>window.mapContainer</code>).</li>
+        <li><em>Опционально</em>: <code>window.Highcharts</code> для графиков.</li>
+    </ul>
+
+    <div class="warning">
+        <strong>⚠️ Внимание:</strong> Если эндпоинт событий не задан или недоступен, расширение покажет соответствующее сообщение. 
+        Убедитесь, что ваш сервер поддерживает CORS или используйте прокси-путь <code>/store/sensor_events_analyzer/backend/</code> (если вы разместили PHP‑прокси).
+    </div>
+
+    <h2>📂 Структура установки</h2>
+    <pre>
+sensor_events_analyzer/
+├── Module.js
+├── doc/
+│   └── index.html
+└── style.css (рекомендуется)
+    </pre>
+    <p>После загрузки на хостинг (Cloudflare Pages, GitHub Pages, VPS) зарегистрируйте базовый URL в админке PILOT:<br>
+    <code>https://ваш-хост/sensor_events_analyzer/</code><br>
+    Имя расширения в PILOT должно быть <strong>sensor_events_analyzer</strong> (snake_case).</p>
+
+    <h2>🐞 Устранение неполадок</h2>
+    <ul>
+        <li><strong>Дерево объектов не загружается</strong> – проверьте, что <code>/ax/tree.php?vehs=1&state=1</code> доступен из консоли браузера.</li>
+        <li><strong>События не загружаются</strong> – откройте вкладку Network в DevTools, проверьте запрос к вашему эндпоинту, убедитесь в корректности JSON.</li>
+        <li><strong>Карта не реагирует</strong> – убедитесь, что вы находитесь в разделе Online или History PILOT, где карта активна.</li>
+    </ul>
+
+    <footer>
+        Расширение создано в соответствии с <a href="https://raw.githubusercontent.com/pilot-telematics/pilot_extensions/main/AI_SPECS.md">AI_SPECS.md</a>.
+        Для технической поддержки обратитесь к администратору PILOT.
+    </footer>
+</body>
+</html>
