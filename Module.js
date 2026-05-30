@@ -61,10 +61,17 @@ Ext.define('Store.sensor_dashboard.Module', {
                 dataIndex: 'name',
                 flex: 2
             }, {
-                text: l('Model'),
-                dataIndex: 'model',
+                text: l('Метка BLE'),          // Заменено с "Model" на "Метка BLE"
+                dataIndex: 'ble_label',        // Поле, содержащее метку BLE (может быть ble_tag, ble)
                 flex: 1,
-                renderer: function (v) { return v || '—'; }
+                renderer: function (v) {
+                    // Если поле отсутствует или пустое, пробуем другие возможные имена
+                    if (!v && this && this.data) {
+                        if (this.data.ble_tag) return this.data.ble_tag;
+                        if (this.data.ble) return this.data.ble;
+                    }
+                    return v || '—';
+                }
             }, {
                 text: l('Year'),
                 dataIndex: 'year',
@@ -202,13 +209,11 @@ Ext.define('Store.sensor_dashboard.Module', {
                     return;
                 }
 
-                // 1. Проверяем наличие массива objects
                 if (!data.objects || !Ext.isArray(data.objects) || data.objects.length === 0) {
                     me.showEmptySensors();
                     return;
                 }
 
-                // 2. Ищем объект с нужным vehid
                 var foundObject = null;
                 for (var i = 0; i < data.objects.length; i++) {
                     var obj = data.objects[i];
@@ -223,7 +228,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                     return;
                 }
 
-                // 3. Извлекаем поля-датчики (исключая служебные)
                 var excludeKeys = ['id', 'vehid', 'object_id', 'name', 'model', 'year', 'lat', 'lon', 'plate', 'icon', 'route', 'track'];
                 var records = [];
                 for (var key in foundObject) {
@@ -236,7 +240,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 }
 
                 if (records.length === 0) {
-                    // Если датчиков нет, показываем все доступные поля (кроме слишком больших)
                     for (var key in foundObject) {
                         if (foundObject.hasOwnProperty(key) && key !== 'route' && key !== 'track') {
                             records.push({ name: key, value: foundObject[key] });
