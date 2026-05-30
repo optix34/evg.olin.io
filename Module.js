@@ -3,6 +3,7 @@
  * Displays all sensors for selected vehicle.
  * Uses POST to /backend/ax/current_data.php
  * Extracts sensor data from objects array.
+ * Left tree columns: Vehicle name, IButton label (BLE), Year.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -61,10 +62,22 @@ Ext.define('Store.sensor_dashboard.Module', {
                 dataIndex: 'name',
                 flex: 2
             }, {
-                text: l('Model'),
-                dataIndex: 'model',
+                text: l('Метка BLE (IButton)'),
+                dataIndex: 'ibutton',   // основное поле для IButton
                 flex: 1,
-                renderer: function (v) { return v || '—'; }
+                renderer: function (v, meta, record) {
+                    // Пытаемся получить значение IButton из разных возможных полей
+                    if (v) return v;
+                    if (record && record.get) {
+                        if (record.get('iButton')) return record.get('iButton');
+                        if (record.get('ibtn')) return record.get('ibtn');
+                        if (record.get('key_id')) return record.get('key_id');
+                        if (record.get('ble_label')) return record.get('ble_label');
+                        if (record.get('ble_tag')) return record.get('ble_tag');
+                        if (record.get('ble')) return record.get('ble');
+                    }
+                    return '—';
+                }
             }, {
                 text: l('Year'),
                 dataIndex: 'year',
@@ -202,13 +215,11 @@ Ext.define('Store.sensor_dashboard.Module', {
                     return;
                 }
 
-                // 1. Проверяем наличие массива objects
                 if (!data.objects || !Ext.isArray(data.objects) || data.objects.length === 0) {
                     me.showEmptySensors();
                     return;
                 }
 
-                // 2. Ищем объект с нужным vehid
                 var foundObject = null;
                 for (var i = 0; i < data.objects.length; i++) {
                     var obj = data.objects[i];
@@ -223,7 +234,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                     return;
                 }
 
-                // 3. Извлекаем поля-датчики (исключая служебные)
                 var excludeKeys = ['id', 'vehid', 'object_id', 'name', 'model', 'year', 'lat', 'lon', 'plate', 'icon', 'route', 'track'];
                 var records = [];
                 for (var key in foundObject) {
@@ -236,7 +246,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 }
 
                 if (records.length === 0) {
-                    // Если датчиков нет, показываем все доступные поля (кроме слишком больших)
                     for (var key in foundObject) {
                         if (foundObject.hasOwnProperty(key) && key !== 'route' && key !== 'track') {
                             records.push({ name: key, value: foundObject[key] });
