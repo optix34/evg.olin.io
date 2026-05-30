@@ -1,7 +1,8 @@
 /**
  * Sensor Dashboard Extension for PILOT
  * Top: configurable checkboxes for selected vehicle (AOG, Video, ...)
- * Bottom: dashboard with totals per column across all vehicles (full height, no scroll).
+ * Bottom: dashboard with totals per column across all vehicles.
+ * "Total Vehicles" column shows absolute number of all vehicles from the tree.
  * Disabled fields show lock icon, editable fields show no lock.
  */
 Ext.define('Store.sensor_dashboard.Module', {
@@ -208,7 +209,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             data: []
         });
 
-        // Грид с автоматической высотой – без скролла
         var dashboardGrid = Ext.create('Ext.grid.Panel', {
             store: dashboardStore,
             cls: 'dashboard-grid',
@@ -245,7 +245,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             items: [dashboardGrid],
             collapsible: true,
             collapsed: false,
-            // высота автоматическая
             autoHeight: true
         });
 
@@ -375,34 +374,37 @@ Ext.define('Store.sensor_dashboard.Module', {
         var store = me.mainPanel.dashboardStore;
         if (!store) return;
 
+        // 1. Собрать ВСЕ идентификаторы ТС из дерева (абсолютное количество)
         var allVehicles = [];
         var tree = me.navTab.items.get(0);
         var rootNode = tree.getRootNode();
         me.collectVehicles(rootNode, allVehicles);
+        var totalVehicleCount = allVehicles.length;  // ← общее количество ТС у клиента
 
+        // 2. Подсчитать, для каждого датчика, сколько ТС имеют "yes"
         var totals = {};
         Ext.each(me.sensors, function(s) { totals[s.name] = 0; });
-        var vehicleCount = 0;
 
+        // 3. Пройти по каждому ТС (даже если у него нет сохранённых настроек – считать как "no")
         Ext.each(allVehicles, function(vehid) {
             var storageKey = 'sensor_dashboard_' + vehid;
             var saved = localStorage.getItem(storageKey);
-            if (saved) {
-                var values = JSON.parse(saved);
-                Ext.each(me.sensors, function(s) {
-                    if (values[s.name] === 'yes') totals[s.name]++;
-                });
-                vehicleCount++;
-            }
+            var values = saved ? JSON.parse(saved) : {};
+            Ext.each(me.sensors, function(s) {
+                if (values[s.name] === 'yes') {
+                    totals[s.name]++;
+                }
+            });
         });
 
+        // 4. Сформировать данные для таблицы
         var data = [];
         Ext.each(me.sensors, function(sensor) {
             var enabled = totals[sensor.name];
-            var percent = vehicleCount ? Math.round((enabled / vehicleCount) * 100) : 0;
+            var percent = totalVehicleCount ? Math.round((enabled / totalVehicleCount) * 100) : 0;
             data.push({
                 sensor: sensor.label,
-                totalVehicles: vehicleCount,
+                totalVehicles: totalVehicleCount,   // ← везде одинаковое общее количество ТС
                 enabledCount: enabled,
                 percentage: percent
             });
