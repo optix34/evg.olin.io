@@ -1,8 +1,8 @@
 /**
  * Sensor Dashboard Extension for PILOT
  * Displays all sensors and their current values for selected vehicle.
- * Uses correct PILOT API endpoints: /api/api.php with cmd=list and cmd=istatus.
  * Follows AI_SPECS.md strictly.
+ * FIXED: All API calls use window.location.origin to avoid proxy path issues.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -39,89 +39,48 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     /**
      * Helper: builds absolute API URL using current origin.
-     * @param {String} endpoint e.g. 'ax/tree.php' (unused now, kept for compatibility)
+     * @param {String} endpoint e.g. 'ax/tree.php'
      * @return {String} full URL
      */
     getApiUrl: function (endpoint) {
         var origin = window.location.origin;
+        // Remove trailing slash from origin if present
         if (origin.substr(-1) === '/') {
             origin = origin.slice(0, -1);
         }
-        // Always use /api/api.php for PILOT API
-        return origin + '/api/api.php';
+        // Ensure endpoint does not start with slash
+        if (endpoint.charAt(0) === '/') {
+            endpoint = endpoint.substr(1);
+        }
+        return origin + '/' + endpoint;
     },
 
     /**
-     * Creates the tree panel that displays vehicles from PILOT API (cmd=list)
+     * Creates the tree panel that displays vehicles from /ax/tree.php
      * @return {Ext.tree.Panel}
      */
     createVehicleTree: function () {
         var me = this;
-        var apiUrl = me.getApiUrl(); // returns /api/api.php
+        var apiUrl = me.getApiUrl('ax/tree.php');
 
         var treeStore = Ext.create('Ext.data.TreeStore', {
             proxy: {
                 type: 'ajax',
                 url: apiUrl,
                 extraParams: {
-                    cmd: 'list',
-                    node: 1
+                    vehs: 1,
+                    state: 1
                 },
                 reader: {
                     type: 'json',
-                    rootProperty: 'list' // PILOT returns objects in "list" array
+                    rootProperty: 'children' // PILOT returns groups as root array with children
                 }
             },
-            // Convert flat list into tree structure (groups and vehicles)
-            // PILOT /api/api.php?cmd=list returns a flat array with "parent" field.
-            // We'll build tree dynamically in the store's load event.
+            nodeParam: 'id',
+            defaultRootProperty: 'children',
             root: {
                 expanded: true,
-                text: l('All Vehicles'),
-                children: []
-            },
-            listeners: {
-                load: function (store, records, successful) {
-                    if (!successful) return;
-                    // Transform flat records into tree hierarchy
-                    var tree = store.getRoot();
-                    var items = records;
-                    var map = {};
-                    var roots = [];
-
-                    // First pass: create map of id -> node
-                    Ext.each(items, function (item) {
-                        var node = {
-                            id: item.get('id'),
-                            text: item.get('name') || item.get('text') || 'Unnamed',
-                            vehid: item.get('id'), // vehicle id
-                            name: item.get('name') || item.get('text'),
-                            model: item.get('model'),
-                            year: item.get('year'),
-                            leaf: true, // assume leaf, will be overridden if children exist
-                            expanded: false,
-                            children: []
-                        };
-                        map[node.id] = node;
-                    });
-
-                    // Second pass: build hierarchy
-                    Ext.each(items, function (item) {
-                        var node = map[item.get('id')];
-                        var parentId = item.get('parent');
-                        if (parentId && parentId !== 0 && map[parentId]) {
-                            map[parentId].leaf = false;
-                            map[parentId].children.push(node);
-                        } else {
-                            roots.push(node);
-                        }
-                    });
-
-                    // Clear and set root children
-                    tree.removeAll();
-                    tree.appendChild(roots);
-                },
-                scope: me
+                text: l('All Vehicles')
             }
         });
 
@@ -132,7 +91,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             columns: [{
                 xtype: 'treecolumn',
                 text: l('Vehicle'),
-                dataIndex: 'text',
+                dataIndex: 'name',
                 flex: 2
             }, {
                 text: l('Model'),
@@ -149,9 +108,9 @@ Ext.define('Store.sensor_dashboard.Module', {
                 selectionchange: function (selModel, selected) {
                     if (selected && selected.length) {
                         var record = selected[0];
-                        // Only load sensors if the selected node is a vehicle (has vehid and no children)
-                        if (record.get('vehid') && !record.hasChildNodes()) {
-                            me.loadSensors(record.get('vehid'), record.get('text'));
+                        // Only load sensors if the selected node is a vehicle (has vehid)
+                        if (record.get('vehid')) {
+                            me.loadSensors(record.get('vehid'), record.get('name'));
                         } else {
                             // Group/folder selected – show placeholder
                             me.mainPanel.down('#sensorGrid').getStore().removeAll();
@@ -187,10 +146,8 @@ Ext.define('Store.sensor_dashboard.Module', {
                 dataIndex: 'name',
                 flex: 2,
                 renderer: function (v) {
-                    // Human-readable sensor name
-                    var friendly = v.replace(/_/g, ' ');
-                    friendly = Ext.String.capitalize(friendly);
-                    return friendly;
+                    // Human-readable sensor name (replace underscores with spaces, capitalize)
+                    return Ext.String.capitalize(Ext.String.trim(v.replace(/_/g, ' ')));
                 }
             }, {
                 text: l('Value'),
@@ -202,31 +159,37 @@ Ext.define('Store.sensor_dashboard.Module', {
                     if (window.speedSS && sensorName === 'speed') {
                         return window.speedSS(v);
                     }
-                    if (window.mileageSS && (sensorName === 'total_run' || sensorName === 'mileage')) {
+                    if (window.mileageSS && (sensorName === 'mileage' || sensorName === 'total_mileage')) {
                         return window.mileageSS(v);
-                    }
-                    if (window.engineHours && sensorName === 'engine_hours') {
-                        return window.engineHours(v);
                     }
                     if (window.num) {
                         return window.num(v, 1);
                     }
-                    // Add units where known
-                    if (sensorName === 'fuel') return v + ' %';
+                    // Default: add units where known
+                    if (sensorName === 'fuel_level') return v + ' %';
                     if (sensorName === 'temperature') return v + ' °C';
                     if (sensorName === 'voltage') return v + ' V';
                     if (sensorName === 'ignition') return v == 1 ? l('ON') : l('OFF');
-                    if (sensorName === 'total_run') return v + ' km';
-                    if (sensorName === 'engine_hours') return v + ' h';
                     return v;
                 }
             }],
             viewConfig: {
                 emptyText: l('Select a vehicle from the left tree to see sensors')
-            }
+            },
+            bbar: [{
+                text: l('Refresh'),
+                iconCls: 'fa fa-refresh',
+                handler: function () {
+                    var selected = me.getSelectedVehicle();
+                    if (selected && selected.vehid) {
+                        me.loadSensors(selected.vehid, selected.name);
+                    }
+                },
+                scope: me
+            }]
         });
 
-        // Top toolbar with vehicle name and refresh button
+        // Top toolbar with vehicle name
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
             items: [{
                 xtype: 'label',
@@ -242,18 +205,22 @@ Ext.define('Store.sensor_dashboard.Module', {
                     if (selected && selected.vehid) {
                         me.loadSensors(selected.vehid, selected.name);
                     }
-                },
-                scope: me
+                }
             }]
         });
 
         var mainPanel = Ext.create('Ext.panel.Panel', {
             layout: 'fit',
             tbar: tbar,
-            items: [grid]
+            items: [grid],
+            listeners: {
+                afterrender: function () {
+                    // No initial selection
+                }
+            }
         });
 
-        // Store references
+        // Store reference to grid and tbar for later updates
         mainPanel.sensorGrid = grid;
         mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
 
@@ -261,7 +228,7 @@ Ext.define('Store.sensor_dashboard.Module', {
     },
 
     /**
-     * Load sensors for a given vehicle ID using PILOT API cmd=istatus
+     * Load sensors for a given vehicle ID using absolute API URL.
      * @param {Number} vehid
      * @param {String} vehicleName
      */
@@ -275,15 +242,12 @@ Ext.define('Store.sensor_dashboard.Module', {
         grid.setLoading(true);
         label.setText(vehicleName + ' (' + l('loading...') + ')');
 
-        var apiUrl = me.getApiUrl(); // /api/api.php
+        var apiUrl = me.getApiUrl('ax/state.php');
 
         Ext.Ajax.request({
             url: apiUrl,
-            method: 'GET',
             params: {
-                cmd: 'istatus',
-                imei: vehid,
-                node: 1
+                vehid: vehid
             },
             timeout: 10000,
             success: function (response) {
@@ -297,49 +261,31 @@ Ext.define('Store.sensor_dashboard.Module', {
                     return;
                 }
 
-                if (data && data.code === 0) {
+                if (data && data.success === true && data.data) {
+                    var sensors = data.data;
+                    // Convert object to array of {name, value}
                     var records = [];
-
-                    // Common fields from istatus response
-                    if (data.total_run !== undefined) records.push({ name: 'total_run', value: data.total_run });
-                    if (data.engine_hours !== undefined) records.push({ name: 'engine_hours', value: data.engine_hours });
-                    if (data.fuel !== undefined) records.push({ name: 'fuel', value: data.fuel });
-                    if (data.speed !== undefined) records.push({ name: 'speed', value: data.speed });
-                    if (data.temperature !== undefined) records.push({ name: 'temperature', value: data.temperature });
-                    if (data.voltage !== undefined) records.push({ name: 'voltage', value: data.voltage });
-                    if (data.ignition !== undefined) records.push({ name: 'ignition', value: data.ignition });
-                    
-                    // Fuel sensors (if array)
-                    if (data.fuel_sensors && Ext.isArray(data.fuel_sensors)) {
-                        Ext.each(data.fuel_sensors, function (fs, idx) {
-                            var name = fs.info || ('fuel_sensor_' + (idx+1));
-                            records.push({ name: name, value: fs.fuel });
-                        });
+                    for (var key in sensors) {
+                        if (sensors.hasOwnProperty(key)) {
+                            records.push({
+                                name: key,
+                                value: sensors[key]
+                            });
+                        }
                     }
-
-                    // Additional custom sensors might be in data.sensors or data.data
-                    if (data.sensors && Ext.isObject(data.sensors)) {
-                        Ext.iterate(data.sensors, function (key, val) {
-                            records.push({ name: key, value: val });
-                        });
-                    }
-
                     if (records.length === 0) {
                         me.showEmptySensors();
-                        Ext.Msg.alert(l('Info'), l('No sensor data available for this vehicle'));
                     } else {
                         grid.getStore().loadData(records);
                         label.setText(vehicleName);
                     }
                 } else {
-                    console.error('API error:', data);
-                    Ext.Msg.alert(l('Error'), l('Failed to load sensor data. API returned error code: ') + (data ? data.code : 'unknown'));
                     me.showEmptySensors();
                 }
             },
-            failure: function (response) {
+            failure: function () {
                 grid.setLoading(false);
-                Ext.Msg.alert(l('Error'), l('Network error: ') + response.status);
+                Ext.Msg.alert(l('Error'), l('Failed to load sensor data. Please check network or try again.'));
                 me.showEmptySensors();
             },
             scope: me
@@ -353,8 +299,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var mainPanel = this.mainPanel;
         if (mainPanel && mainPanel.sensorGrid) {
             mainPanel.sensorGrid.getStore().removeAll();
-            var selected = this.getSelectedVehicle();
-            mainPanel.vehicleLabel.setText(selected ? selected.name : l('No vehicle selected'));
+            mainPanel.vehicleLabel.setText(this.getSelectedVehicle() ? this.getSelectedVehicle().name : l('No vehicle selected'));
         }
     },
 
@@ -363,14 +308,14 @@ Ext.define('Store.sensor_dashboard.Module', {
      * @return {Object|null} with vehid, name, etc.
      */
     getSelectedVehicle: function () {
-        var tree = this.navTab.items.get(0);
+        var tree = this.navTab.items.get(0); // tree is the first item
         var selection = tree.getSelectionModel().getSelection();
         if (selection && selection.length) {
             var rec = selection[0];
-            if (rec.get('vehid') && !rec.hasChildNodes()) {
+            if (rec.get('vehid')) {
                 return {
                     vehid: rec.get('vehid'),
-                    name: rec.get('text')
+                    name: rec.get('name')
                 };
             }
         }
