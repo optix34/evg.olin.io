@@ -3,7 +3,8 @@
  * Top: configurable checkboxes for selected vehicle (AOG, Video, Tablo, Voice, TF, KPP, THG, DUT, Temp sensor)
  * Bottom: dashboard with totals per column across all vehicles.
  * "Total Vehicles" column shows absolute number of all vehicles from the tree.
- * Active, crisp black text and checkboxes.
+ * All text and checkboxes are pure black (#000000), no transparency in disabled state.
+ * Disabled checkboxes show a lock icon.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -25,7 +26,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.addCustomStyles();
 
         var navTab = Ext.create('Ext.panel.Panel', {
-            title: 'Доп. Оборудование',        // ← новое название вкладки
+            title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
             width: 320,
             layout: 'fit',
@@ -67,33 +68,35 @@ Ext.define('Store.sensor_dashboard.Module', {
                 background: transparent !important;
                 position: relative;
             }
-            /* Активные, чёрные, чёткие чекбоксы и текст */
+            /* Всегда чёрный текст, без полупрозрачности */
             .sensor-dashboard-checkbox .x-form-cb-label {
                 color: #000000 !important;
                 font-weight: 600 !important;
                 font-size: 13px !important;
                 margin-left: 6px !important;
                 text-shadow: none !important;
+                opacity: 1 !important;
             }
             .sensor-dashboard-checkbox .x-form-checkbox {
                 transform: scale(1.15) !important;
                 margin-right: 4px !important;
             }
-            /* Яркий неактивный стиль (без прозрачности) */
-            .sensor-checkbox-item.locked .x-form-cb-label::after {
-                content: " 🔒";
-                font-size: 11px;
-                opacity: 0.7;
-                margin-left: 4px;
+            /* Неактивное состояние – чёрный текст, никакой прозрачности */
+            .sensor-dashboard-checkbox .x-form-field:disabled + .x-form-cb-label {
+                color: #000000 !important;
+                opacity: 1 !important;
             }
             .sensor-dashboard-checkbox .x-form-checkbox:disabled {
-                opacity: 0.9 !important;
+                opacity: 1 !important;
                 background-color: #eef2f7 !important;
                 border-color: #b0c4de !important;
             }
-            .sensor-dashboard-checkbox .x-form-field:disabled + .x-form-cb-label {
-                color: #000000 !important;
-                opacity: 0.9 !important;
+            /* Иконка замка для неактивных полей */
+            .sensor-checkbox-item.locked .x-form-cb-label::after {
+                content: " 🔒";
+                font-size: 11px;
+                opacity: 0.8;
+                margin-left: 4px;
             }
             .dashboard-panel {
                 background: #ffffff !important;
