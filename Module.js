@@ -3,7 +3,8 @@
  * Верхняя часть: чекбоксы для выбранного ТС (АОГ, Видео, Табло и т.д.)
  * Нижняя часть: дашборд со статистикой по всем объектам.
  * Стили не конфликтуют с системными, используют стандартные классы PILOT.
- * Левая вкладка – Pilot.utils.LeftBarPanel (требование AI_SPECS.md).
+ * Левая вкладка – Pilot.utils.LeftBarPanel.
+ * Неактивные чекбоксы – полная видимость (opacity: 1), чёрный текст, иконка замка.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -24,7 +25,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        // Левая панель – стандартный компонент PILOT (без лишних линий)
         var navTab = Ext.create('Pilot.utils.LeftBarPanel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
@@ -48,7 +48,6 @@ Ext.define('Store.sensor_dashboard.Module', {
     addCustomStyles: function () {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
-        // Стили только для нашего расширения, без глобальных переопределений
         styleEl.innerHTML = `
             .sensor-checkbox-item {
                 display: inline-block;
@@ -58,7 +57,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             .sensor-checkbox-item.locked .x-form-cb-label:after {
                 content: " 🔒";
                 font-size: 11px;
-                opacity: 0.6;
+                opacity: 0.8;
                 margin-left: 4px;
             }
             .sensors-hbox-container {
@@ -74,6 +73,25 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             .dashboard-grid .x-grid-header {
                 background: #f5f5f5;
+            }
+            /* Полная видимость для всех элементов, без прозрачности */
+            .x-form-cb-label {
+                color: #000000 !important;
+                font-weight: normal !important;
+                opacity: 1 !important;
+            }
+            .x-form-checkbox {
+                opacity: 1 !important;
+            }
+            /* Неактивные чекбоксы – полная видимость, чёрный текст, замок */
+            .x-form-checkbox:disabled {
+                opacity: 1 !important;
+                background-color: #f0f0f0 !important;
+                border-color: #a0a0a0 !important;
+            }
+            .x-form-field:disabled + .x-form-cb-label {
+                opacity: 1 !important;
+                color: #000000 !important;
             }
         `;
         document.head.appendChild(styleEl);
@@ -253,8 +271,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 itemId: sensor.name,
                 checked: checked,
                 disabled: true,
-                // Не переопределяем системные классы, добавляем только свой для контейнера
-                labelCls: 'x-form-cb-label'  // стандартный
+                labelCls: 'x-form-cb-label'
             });
             var wrapper = Ext.create('Ext.container.Container', {
                 cls: 'sensor-checkbox-item',
