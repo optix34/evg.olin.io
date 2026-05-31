@@ -1,8 +1,10 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель (обычная, без выдвижного меню): поиск по ТС + фильтр по датчику.
+ * Левая панель (обычная): поиск по ТС + фильтр по датчику (ComboBox).
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Диаграмма растягивается на всю ширину правого окна, без кнопок экспорта и контекстного меню.
+ * Диаграмма растягивается на всю ширину, без кнопок экспорта.
+ * Таблица "Статистика по всем объектам" кликабельна – при клике на строку
+ * в левом списке остаются только ТС, у которых выбранный датчик активен.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -89,6 +91,12 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             .dashboard-grid .x-grid-header {
                 background: #f5f5f5;
+            }
+            .dashboard-grid .x-grid-row {
+                cursor: pointer;
+            }
+            .dashboard-grid .x-grid-row-over {
+                background-color: #eef2f7;
             }
             .vehicle-search-field, .sensor-filter-combo {
                 margin: 5px;
@@ -330,7 +338,28 @@ Ext.define('Store.sensor_dashboard.Module', {
                 { text: 'Включено', dataIndex: 'enabledCount', flex: 1 },
                 { text: '%', dataIndex: 'percentage', flex: 1, renderer: function(v) { return v + ' %'; } }
             ],
-            viewConfig: { stripeRows: true, emptyText: 'Нет данных' }
+            viewConfig: { stripeRows: true, emptyText: 'Нет данных' },
+            listeners: {
+                itemclick: function(view, record) {
+                    // Получаем label датчика из записи
+                    var sensorLabel = record.get('sensor');
+                    // Находим соответствующий name в me.sensors
+                    var sensor = me.sensors.find(function(s) {
+                        return s.label === sensorLabel;
+                    });
+                    if (sensor) {
+                        var currentValue = me.sensorFilterCombo.getValue();
+                        if (currentValue === sensor.name) {
+                            // Если уже выбран этот датчик – сбрасываем фильтр (Все датчики)
+                            me.sensorFilterCombo.setValue(null);
+                        } else {
+                            // Иначе устанавливаем выбранный датчик
+                            me.sensorFilterCombo.setValue(sensor.name);
+                        }
+                        me.applyVehicleFilters();
+                    }
+                }
+            }
         });
 
         var dashboardPanel = Ext.create('Ext.panel.Panel', {
@@ -562,9 +591,9 @@ Ext.define('Store.sensor_dashboard.Module', {
                 }
             }],
             credits: { enabled: false },
-            exporting: { enabled: false },          // отключаем кнопку экспорта
-            navigation: { buttonOptions: { enabled: false } }, // отключаем кнопки навигации
-            legend: { enabled: false },              // можно убрать легенду (одна серия)
+            exporting: { enabled: false },
+            navigation: { buttonOptions: { enabled: false } },
+            legend: { enabled: false },
             responsive: {
                 rules: [{
                     condition: { maxWidth: 600 },
