@@ -2,8 +2,7 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками + кнопка импорта CSV.
  * Правая панель: таблица датчиков через widgetcolumn с чекбоксами (checkboxfield).
- * Импорт CSV: загружает файл с колонками (гос.номер, АОГ, Видео, Табло, Голос, ТФ, BLE, ТХГ, ДУТ, Датчик t)
- * и обновляет настройки датчиков для найденных транспортных средств.
+ * Импорт CSV: поддерживает разделители `,` или `;`, колонки могут отсутствовать (кроме "гос.номер").
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -193,7 +192,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
         });
 
-        // Кнопка импорта CSV (без иконки, только текст)
         var importBtn = Ext.create('Ext.button.Button', {
             cls: 'import-csv-btn',
             text: 'Импорт CSV',
@@ -236,7 +234,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         return grid;
     },
 
-    // Импорт CSV
     importCsv: function() {
         var me = this;
         var input = document.createElement('input');
@@ -257,31 +254,54 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     processCsv: function(csvContent) {
         var me = this;
+        // Определяем разделитель
+        var firstLine = csvContent.split(/\r?\n/)[0];
+        var delimiter = firstLine.indexOf(';') !== -1 ? ';' : ',';
         var lines = csvContent.split(/\r?\n/);
         if (lines.length === 0) return;
-        var headers = lines[0].split(',').map(function(h) { return h.trim().toLowerCase(); });
-        // Ожидаемые колонки: гос.номер, аог, видео, табло, голос, тф, ble, тхг, дут, датчик t
-        var expectedCols = ['гос.номер', 'аог', 'видео', 'табло', 'голос', 'тф', 'ble', 'тхг', 'дут', 'датчик t'];
+
+        var headers = lines[0].split(delimiter).map(function(h) { return h.trim().toLowerCase(); });
+
+        // Сопоставление желаемых колонок с заголовками
         var colMap = {};
-        for (var i = 0; i < expectedCols.length; i++) {
-            var expected = expectedCols[i];
-            var idx = headers.indexOf(expected);
-            if (idx === -1) {
-                Ext.Msg.alert('Ошибка', 'В CSV отсутствует колонка "' + expected + '"');
-                return;
+        var missingCols = [];
+        Ext.each(me.sensors, function(sensor) {
+            if (sensor.csvCol) {
+                var colName = sensor.csvCol.toLowerCase();
+                var idx = headers.indexOf(colName);
+                if (idx !== -1) {
+                    colMap[colName] = idx;
+                } else {
+                    missingCols.push(sensor.label);
+                }
             }
-            colMap[expected] = idx;
+        });
+        // Колонка "гос.номер" обязательна
+        var plateColName = 'гос.номер'.toLowerCase();
+        if (headers.indexOf(plateColName) === -1) {
+            Ext.Msg.alert('Ошибка', 'В CSV отсутствует обязательная колонка "гос.номер"');
+            return;
+        }
+        colMap[plateColName] = headers.indexOf(plateColName);
+
+        if (missingCols.length) {
+            Ext.Msg.show({
+                title: 'Предупреждение',
+                message: 'В CSV отсутствуют колонки для датчиков: ' + missingCols.join(', ') + '. Они будут пропущены.',
+                buttons: Ext.Msg.OK,
+                icon: Ext.Msg.WARNING
+            });
         }
 
         var updated = 0;
         for (var rowIdx = 1; rowIdx < lines.length; rowIdx++) {
             var line = lines[rowIdx].trim();
             if (line === '') continue;
-            var parts = line.split(',');
-            if (parts.length < expectedCols.length) continue;
-            var plate = parts[colMap['гос.номер']].trim();
+            var parts = line.split(delimiter);
+            if (parts.length < Object.keys(colMap).length) continue;
+            var plate = parts[colMap[plateColName]].trim();
             if (plate === '') continue;
-            // Найти ТС по гос.номеру в fullStore
+
             var foundRecord = null;
             me.vehicleFullStore.each(function(rec) {
                 var recPlate = rec.get('plate');
@@ -295,39 +315,30 @@ Ext.define('Store.sensor_dashboard.Module', {
                 continue;
             }
             var vehid = foundRecord.get('vehid');
-            // Получить текущие значения датчиков
             var storageKey = 'sensor_dashboard_' + vehid;
             var saved = localStorage.getItem(storageKey);
             var values = saved ? JSON.parse(saved) : {};
-            // Заполняем по колонкам
-            var sensorMapping = {
-                'аог': 'aog',
-                'видео': 'video',
-                'табло': 'tablo',
-                'голос': 'voice',
-                'тф': 'tf',
-                'ble': 'kpp',      // BLE -> kpp
-                'тхг': 'thg',
-                'дут': 'dut',
-                'датчик t': 'temp_sensor'
-            };
-            for (var col in sensorMapping) {
-                var csvVal = parts[colMap[col]].trim().toLowerCase();
-                var sensorName = sensorMapping[col];
-                var isYes = (csvVal === 'да' || csvVal === 'yes' || csvVal === '1' || csvVal === 'true');
-                values[sensorName] = isYes ? 'yes' : 'no';
-            }
-            // Сохранить
+
+            // Обновляем датчики, для которых есть колонка в CSV
+            Ext.each(me.sensors, function(sensor) {
+                if (sensor.csvCol) {
+                    var colName = sensor.csvCol.toLowerCase();
+                    if (colMap[colName] !== undefined) {
+                        var csvVal = parts[colMap[colName]].trim().toLowerCase();
+                        var isYes = (csvVal === 'да' || csvVal === 'yes' || csvVal === '1' || csvVal === 'true');
+                        values[sensor.name] = isYes ? 'yes' : 'no';
+                    }
+                }
+            });
+
             localStorage.setItem(storageKey, JSON.stringify(values));
             updated++;
-            // Обновить иконки в левом списке
             me.updateVehicleIcons(vehid);
         }
+
         Ext.Msg.alert('Импорт завершён', 'Обновлено ТС: ' + updated);
-        // Обновить фильтры и дашборд
         me.applyVehicleFilters();
         me.refreshDashboard();
-        // Если текущее выбранное ТС было обновлено – перезагрузить его конфигурацию
         if (me.currentVehid) {
             var currentRecord = me.vehicleGridStore.findRecord('vehid', me.currentVehid);
             if (currentRecord) {
@@ -419,7 +430,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             var newIcons = me.getSensorIconsHtml(vehid);
             record.set('icons', newIcons);
         }
-        // Также обновить в fullStore (чтобы при повторной фильтрации иконки были свежими)
         var fullRecord = me.vehicleFullStore.findRecord('vehid', vehid);
         if (fullRecord) {
             fullRecord.set('icons', me.getSensorIconsHtml(vehid));
@@ -437,23 +447,9 @@ Ext.define('Store.sensor_dashboard.Module', {
         function createMenuForSensor(sensor) {
             return Ext.create('Ext.menu.Menu', {
                 items: [
-                    {
-                        text: 'Выбрать все',
-                        handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, true); }
-                    },
-                    {
-                        text: 'Снять все',
-                        handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, false); }
-                    },
-                    {
-                        text: 'Фильтровать по этому датчику',
-                        handler: function() {
-                            if (me.sensorFilterCombo) {
-                                me.sensorFilterCombo.setValue(sensor.name);
-                                me.applyVehicleFilters();
-                            }
-                        }
-                    }
+                    { text: 'Выбрать все', handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, true); } },
+                    { text: 'Снять все', handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, false); } },
+                    { text: 'Фильтровать по этому датчику', handler: function() { if (me.sensorFilterCombo) { me.sensorFilterCombo.setValue(sensor.name); me.applyVehicleFilters(); } } }
                 ]
             });
         }
@@ -569,9 +565,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         if (!me.currentVehid) return;
         var record = me.mainPanel.sensorsStore.getAt(0);
-        if (record) {
-            record.set(sensorName, value);
-        }
+        if (record) record.set(sensorName, value);
     },
 
     loadConfigForVehicle: function (vehid, vehicleName) {
