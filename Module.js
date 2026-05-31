@@ -1,8 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель (обычная, без выдвижного меню): поиск по ТС + фильтр по датчику.
+ * Левая панель (обычная): поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Диаграмма растягивается на всю ширину правого окна.
+ * Диаграмма растягивается на всю ширину, без кнопок сворачивания.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -23,7 +23,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        // Левая панель – обычная панель (без выдвижного меню)
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
@@ -41,7 +40,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.mainPanel = mainPanel;
         me.navTab = navTab;
 
-        // Наблюдение за изменением размера для перерисовки диаграммы
         me.resizeObserver = new ResizeObserver(function() {
             if (me.chart) {
                 me.chart.reflow();
@@ -338,7 +336,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             cls: 'dashboard-panel',
             layout: 'fit',
             items: [dashboardGrid],
-            collapsible: true,
+            collapsible: false,      // кнопка сворачивания убрана
             collapsed: false,
             autoHeight: true
         });
