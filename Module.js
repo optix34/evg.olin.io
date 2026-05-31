@@ -2,7 +2,7 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками + кнопка импорта CSV.
  * Правая панель: таблица датчиков через widgetcolumn с чекбоксами (checkboxfield).
- * Импорт CSV: поддерживает разделители `,` или `;`, колонки могут отсутствовать (кроме "гос.номер").
+ * Импорт CSV: ищет ТС по названию (name), а не по гос.номеру.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -130,7 +130,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var apiUrl = me.getApiUrl('ax/tree.php');
 
         var fullStore = Ext.create('Ext.data.Store', {
-            fields: ['vehid', 'name', 'plate', 'icons'],
+            fields: ['vehid', 'name', 'icons'],
             proxy: {
                 type: 'ajax',
                 url: apiUrl,
@@ -146,7 +146,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                                     vehicles.push({
                                         vehid: node.vehid,
                                         name: node.name,
-                                        plate: node.plate || node.gos_number || '',
                                         icons: me.getSensorIconsHtml(node.vehid)
                                     });
                                 }
@@ -202,7 +201,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
 
         var grid = Ext.create('Ext.grid.Panel', {
-            store: Ext.create('Ext.data.Store', { fields: ['vehid', 'name', 'plate', 'icons'], data: [] }),
+            store: Ext.create('Ext.data.Store', { fields: ['vehid', 'name', 'icons'], data: [] }),
             columns: [
                 { text: 'ТС', dataIndex: 'name', flex: 2 },
                 { text: 'Датчики', dataIndex: 'icons', flex: 1, renderer: function(v) { return v || '—'; } }
@@ -254,7 +253,6 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     processCsv: function(csvContent) {
         var me = this;
-        // Определяем разделитель
         var firstLine = csvContent.split(/\r?\n/)[0];
         var delimiter = firstLine.indexOf(';') !== -1 ? ';' : ',';
         var lines = csvContent.split(/\r?\n/);
@@ -262,7 +260,6 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var headers = lines[0].split(delimiter).map(function(h) { return h.trim().toLowerCase(); });
 
-        // Сопоставление желаемых колонок с заголовками
         var colMap = {};
         var missingCols = [];
         Ext.each(me.sensors, function(sensor) {
@@ -276,13 +273,13 @@ Ext.define('Store.sensor_dashboard.Module', {
                 }
             }
         });
-        // Колонка "гос.номер" обязательна
-        var plateColName = 'гос.номер'.toLowerCase();
-        if (headers.indexOf(plateColName) === -1) {
+        // Колонка "гос.номер" обязательна (в ней хранится название ТС)
+        var nameColName = 'гос.номер'.toLowerCase();
+        if (headers.indexOf(nameColName) === -1) {
             Ext.Msg.alert('Ошибка', 'В CSV отсутствует обязательная колонка "гос.номер"');
             return;
         }
-        colMap[plateColName] = headers.indexOf(plateColName);
+        colMap[nameColName] = headers.indexOf(nameColName);
 
         if (missingCols.length) {
             Ext.Msg.show({
@@ -299,19 +296,20 @@ Ext.define('Store.sensor_dashboard.Module', {
             if (line === '') continue;
             var parts = line.split(delimiter);
             if (parts.length < Object.keys(colMap).length) continue;
-            var plate = parts[colMap[plateColName]].trim();
-            if (plate === '') continue;
+            var vehicleName = parts[colMap[nameColName]].trim();
+            if (vehicleName === '') continue;
 
+            // Поиск по названию ТС (name), а не по гос.номеру
             var foundRecord = null;
             me.vehicleFullStore.each(function(rec) {
-                var recPlate = rec.get('plate');
-                if (recPlate && recPlate.toLowerCase() === plate.toLowerCase()) {
+                var recName = rec.get('name');
+                if (recName && recName.toLowerCase() === vehicleName.toLowerCase()) {
                     foundRecord = rec;
                     return false;
                 }
             });
             if (!foundRecord) {
-                console.warn('ТС с номером ' + plate + ' не найдено');
+                console.warn('ТС с названием "' + vehicleName + '" не найдено');
                 continue;
             }
             var vehid = foundRecord.get('vehid');
@@ -319,7 +317,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             var saved = localStorage.getItem(storageKey);
             var values = saved ? JSON.parse(saved) : {};
 
-            // Обновляем датчики, для которых есть колонка в CSV
             Ext.each(me.sensors, function(sensor) {
                 if (sensor.csvCol) {
                     var colName = sensor.csvCol.toLowerCase();
@@ -377,7 +374,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             filtered.push(Ext.create('Ext.data.Model', {
                 vehid: vehid,
                 name: name,
-                plate: record.get('plate'),
                 icons: iconsHtml
             }));
         });
