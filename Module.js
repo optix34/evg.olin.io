@@ -1,9 +1,9 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику (ComboBox).
- * Правая панель: чекбоксы с подписью рядом (справа), всегда активны, кнопка «Применить».
- * Таблица статистики: клик по строке датчика применяет фильтр по этому датчику.
- * Диаграмма растягивается на всю ширину, без кнопок экспорта.
+ * Правая панель: чекбоксы всегда активны, кнопка «Применить».
+ * Чекбоксы равномерно распределены по всей ширине контейнера, занимают доступное пространство.
+ * Клик по строке таблицы статистики фильтрует ТС по датчику.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -24,7 +24,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        // Левая панель – обычная панель (без выдвижного меню)
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
@@ -42,11 +41,8 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.mainPanel = mainPanel;
         me.navTab = navTab;
 
-        // Наблюдение за изменением размера для перерисовки диаграммы
         me.resizeObserver = new ResizeObserver(function() {
-            if (me.chart) {
-                me.chart.reflow();
-            }
+            if (me.chart) me.chart.reflow();
         });
         if (mainPanel.body) {
             me.resizeObserver.observe(mainPanel.body.dom);
@@ -67,12 +63,21 @@ Ext.define('Store.sensor_dashboard.Module', {
                 overflow: hidden;
             }
             .sensors-hbox-container {
+                display: flex !important;
+                flex-wrap: wrap;
                 padding: 12px 15px;
                 background: transparent;
             }
             .sensor-checkbox-item {
-                display: inline-block;
-                margin: 5px 15px 5px 0;
+                flex: 1 1 auto;           /* растягивается, занимает доступное место */
+                min-width: 110px;          /* минимальная ширина, чтобы не слипалось */
+                margin: 5px 5px 5px 0;
+                white-space: nowrap;
+                display: flex;
+                align-items: center;
+            }
+            .sensor-checkbox-item .x-form-cb-label {
+                margin-left: 5px;
                 white-space: nowrap;
             }
             .x-form-cb-label {
@@ -143,10 +148,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                         function traverse(nodes) {
                             Ext.each(nodes, function(node) {
                                 if (node.vehid) {
-                                    vehicles.push({
-                                        vehid: node.vehid,
-                                        name: node.name
-                                    });
+                                    vehicles.push({ vehid: node.vehid, name: node.name });
                                 }
                                 if (node.children && node.children.length) {
                                     traverse(node.children);
@@ -168,17 +170,10 @@ Ext.define('Store.sensor_dashboard.Module', {
             triggers: {
                 clear: {
                     cls: 'x-form-clear-trigger',
-                    handler: function() {
-                        searchField.reset();
-                        me.applyVehicleFilters();
-                    }
+                    handler: function() { searchField.reset(); me.applyVehicleFilters(); }
                 }
             },
-            listeners: {
-                keyup: function() {
-                    me.applyVehicleFilters();
-                }
-            }
+            listeners: { keyup: function() { me.applyVehicleFilters(); } }
         });
 
         var sensorFilterCombo = Ext.create('Ext.form.field.ComboBox', {
@@ -207,7 +202,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             columns: [{ text: 'ТС', dataIndex: 'name', flex: 1 }],
             tbar: [searchField, sensorFilterCombo],
             listeners: {
-                selectionchange: function (selModel, selected) {
+                selectionchange: function(selModel, selected) {
                     if (selected && selected.length) {
                         var record = selected[0];
                         me.loadConfigForVehicle(record.get('vehid'), record.get('name'));
@@ -226,9 +221,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         fullStore.on('load', function() {
             me.applyVehicleFilters();
             var firstRecord = me.vehicleGridStore.getAt(0);
-            if (firstRecord) {
-                grid.getSelectionModel().select(firstRecord);
-            }
+            if (firstRecord) grid.getSelectionModel().select(firstRecord);
         });
 
         return grid;
@@ -287,9 +280,7 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     selectVehicleInGrid: function(record) {
         var grid = this.navTab.items.get(0);
-        if (grid && grid.getSelectionModel) {
-            grid.getSelectionModel().select(record);
-        }
+        if (grid && grid.getSelectionModel) grid.getSelectionModel().select(record);
     },
 
     getSelectedVehicleFromGrid: function() {
@@ -297,10 +288,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         if (grid && grid.getSelectionModel) {
             var selected = grid.getSelectionModel().getSelection();
             if (selected && selected.length) {
-                return {
-                    vehid: selected[0].get('vehid'),
-                    name: selected[0].get('name')
-                };
+                return { vehid: selected[0].get('vehid'), name: selected[0].get('name') };
             }
         }
         return null;
@@ -311,7 +299,7 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
-            layout: { type: 'hbox', align: 'middle', pack: 'start', wrap: true },
+            layout: 'hbox',
             cls: 'sensors-hbox-container'
         });
 
@@ -410,9 +398,9 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         Ext.each(me.sensors, function (sensor) {
             var checked = (values[sensor.name] === 'yes');
-            // Чекбокс с подписью рядом (boxLabel)
             var checkbox = Ext.create('Ext.form.field.Checkbox', {
-                boxLabel: sensor.label,
+                fieldLabel: sensor.label,
+                labelAlign: 'right',
                 itemId: sensor.name,
                 checked: checked,
                 disabled: false
@@ -420,7 +408,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             var wrapper = Ext.create('Ext.container.Container', {
                 cls: 'sensor-checkbox-item',
                 items: [checkbox],
-                margin: '0 15 0 0'
+                margin: '0 8 0 0'
             });
             container.add(wrapper);
         });
@@ -436,12 +424,9 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var container = me.mainPanel.sensorsContainer;
         var values = {};
-
         Ext.each(me.sensors, function (sensor) {
             var checkbox = container.down('#' + sensor.name);
-            if (checkbox) {
-                values[sensor.name] = checkbox.checked ? 'yes' : 'no';
-            }
+            if (checkbox) values[sensor.name] = checkbox.checked ? 'yes' : 'no';
         });
 
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
@@ -458,15 +443,12 @@ Ext.define('Store.sensor_dashboard.Module', {
         var fullStore = me.vehicleFullStore;
         var allVehicles = [];
         if (fullStore) {
-            fullStore.each(function(record) {
-                allVehicles.push(record.get('vehid'));
-            });
+            fullStore.each(function(record) { allVehicles.push(record.get('vehid')); });
         }
         var totalVehicleCount = allVehicles.length;
 
         var totals = {};
         Ext.each(me.sensors, function(s) { totals[s.name] = 0; });
-
         Ext.each(allVehicles, function(vehid) {
             var storageKey = 'sensor_dashboard_' + vehid;
             var saved = localStorage.getItem(storageKey);
@@ -476,9 +458,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             });
         });
 
-        var data = [];
-        var categories = [];
-        var seriesData = [];
+        var data = [], categories = [], seriesData = [];
         Ext.each(me.sensors, function(sensor) {
             var enabled = totals[sensor.name];
             var percent = totalVehicleCount ? Math.round((enabled / totalVehicleCount) * 100) : 0;
@@ -493,7 +473,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             seriesData.push(enabled);
         });
         store.loadData(data);
-
         me.renderChart(categories, seriesData, totalVehicleCount);
     },
 
@@ -508,87 +487,30 @@ Ext.define('Store.sensor_dashboard.Module', {
             el = document.getElementById('sensorChart');
         }
         if (!el) return;
-
         if (typeof Highcharts === 'undefined') {
             el.innerHTML = '<div style="padding:20px; text-align:center;">Highcharts не загружен</div>';
             return;
         }
+        if (me.chart) me.chart.destroy();
 
-        if (me.chart) {
-            me.chart.destroy();
-        }
-
-        var colors = [
-            '#7cb5ec', '#434348', '#90ed7d', '#f7a35c', '#8085e9',
-            '#f15c80', '#e4d354', '#2b908f', '#f45b5b', '#91e8e1'
-        ];
+        var colors = ['#7cb5ec', '#434348', '#90ed7d', '#f7a35c', '#8085e9',
+                      '#f15c80', '#e4d354', '#2b908f', '#f45b5b', '#91e8e1'];
 
         me.chart = Highcharts.chart(el, {
-            chart: {
-                type: 'column',
-                backgroundColor: 'transparent',
-                style: { fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif' },
-                width: null
-            },
-            title: {
-                text: 'Количество ТС с включённым датчиком',
-                style: { fontSize: '16px', fontWeight: 'bold' }
-            },
-            subtitle: {
-                text: 'Всего ТС: ' + totalVehicleCount,
-                style: { fontSize: '13px', color: '#555' }
-            },
-            xAxis: {
-                categories: categories,
-                title: { text: 'Датчики', style: { fontSize: '13px' } },
-                labels: { rotation: -45, style: { fontSize: '12px' } }
-            },
-            yAxis: {
-                title: { text: 'Количество ТС', style: { fontSize: '13px' } },
-                min: 0,
-                allowDecimals: false
-            },
-            tooltip: {
-                headerFormat: '<b>{point.x}</b><br/>',
-                pointFormat: '{point.y} из {point.total} ТС ({point.percentage:.1f}%)',
-                shared: false
-            },
-            plotOptions: {
-                column: {
-                    colorByPoint: true,
-                    dataLabels: {
-                        enabled: true,
-                        format: '{point.y}',
-                        style: { fontWeight: 'bold', fontSize: '12px' }
-                    },
-                    pointWidth: 55,
-                    groupPadding: 0.1,
-                    pointPadding: 0.2,
-                    borderWidth: 0
-                }
-            },
+            chart: { type: 'column', backgroundColor: 'transparent', width: null },
+            title: { text: 'Количество ТС с включённым датчиком', style: { fontSize: '16px', fontWeight: 'bold' } },
+            subtitle: { text: 'Всего ТС: ' + totalVehicleCount, style: { fontSize: '13px', color: '#555' } },
+            xAxis: { categories: categories, title: { text: 'Датчики' }, labels: { rotation: -45 } },
+            yAxis: { title: { text: 'Количество ТС' }, min: 0, allowDecimals: false },
+            tooltip: { headerFormat: '<b>{point.x}</b><br/>', pointFormat: '{point.y} из {point.total} ТС ({point.percentage:.1f}%)' },
+            plotOptions: { column: { colorByPoint: true, dataLabels: { enabled: true, format: '{point.y}' }, pointWidth: 55 } },
             colors: colors,
-            series: [{
-                name: 'Включено',
-                data: seriesData,
-                tooltip: {
-                    pointFormatter: function() {
-                        return '<b>' + this.y + '</b> из <b>' + totalVehicleCount + '</b> ТС';
-                    }
-                }
-            }],
+            series: [{ name: 'Включено', data: seriesData }],
             credits: { enabled: false },
             exporting: { enabled: false },
             navigation: { buttonOptions: { enabled: false } },
             legend: { enabled: false },
-            responsive: {
-                rules: [{
-                    condition: { maxWidth: 600 },
-                    chartOptions: {
-                        xAxis: { labels: { rotation: -90 } }
-                    }
-                }]
-            }
+            responsive: { rules: [{ condition: { maxWidth: 600 }, chartOptions: { xAxis: { labels: { rotation: -90 } } } }] }
         });
     },
 
