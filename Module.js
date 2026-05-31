@@ -2,7 +2,7 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда чёрные, чёткие (как в режиме редактирования),
- * контейнер прозрачный, при загрузке автоматически выбирается первый ТС из списка.
+ * контейнер полностью прозрачный (без фона), авто-выбор первого ТС.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -47,11 +47,12 @@ Ext.define('Store.sensor_dashboard.Module', {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
-            /* Контейнер чекбоксов – прозрачный, без фона */
+            /* Контейнер чекбоксов – полностью прозрачный, без фона */
             .sensors-hbox-container {
                 padding: 12px 15px;
                 border-bottom: 1px solid #e0e4e8;
-                background: transparent !important;
+                background-color: transparent !important;
+                background: none !important;
             }
             /* Каждый чекбокс */
             .sensor-checkbox-item {
@@ -209,10 +210,8 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.searchField = searchField;
         me.sensorFilterCombo = sensorFilterCombo;
 
-        // После загрузки данных – выбрать первое ТС в списке (если есть)
         fullStore.on('load', function() {
             me.applyVehicleFilters();
-            // Автоматический выбор первого ТС в отфильтрованном списке
             var firstRecord = me.vehicleGridStore.getAt(0);
             if (firstRecord) {
                 grid.getSelectionModel().select(firstRecord);
@@ -253,13 +252,11 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         gridStore.loadData(filtered);
 
-        // Если после фильтрации не осталось ТС – очищаем форму
         if (gridStore.getCount() === 0) {
             me.clearConfigForm();
             return;
         }
 
-        // Выбираем первый ТС, если текущий выбранный отсутствует в новом списке
         var selectedRecord = me.getSelectedVehicleFromGrid();
         if (!selectedRecord) {
             var first = gridStore.getAt(0);
@@ -267,7 +264,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 me.selectVehicleInGrid(first);
             }
         } else {
-            // Проверяем, есть ли выбранный ТС в новом фильтрованном списке
             var exists = false;
             gridStore.each(function(rec) {
                 if (rec.get('vehid') === selectedRecord.vehid) exists = true;
@@ -429,7 +425,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
         localStorage.setItem(storageKey, JSON.stringify(values));
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
-        me.applyVehicleFilters(); // обновляем фильтр по датчику
+        me.applyVehicleFilters();
     },
 
     refreshDashboard: function () {
