@@ -1,8 +1,7 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левое окно: плоский список транспортных средств (без папок), только колонка "ТС".
- * Правое окно: чекбоксы для выбранного ТС (АОГ, Видео, Табло и т.д.)
- * Нижняя часть: дашборд со статистикой по всем объектам.
+ * Левая панель: плоский список ТС (без дерева папок), одна колонка "ТС".
+ * Правая панель: чекбоксы для выбранного ТС и дашборд статистики.
  * Неактивные чекбоксы – полная видимость, чёрный текст, иконка замка.
  */
 Ext.define('Store.sensor_dashboard.Module', {
@@ -29,7 +28,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             iconCls: 'fa fa-microchip',
             iconAlign: 'top',
             minimized: true,
-            items: [me.createVehicleGrid()]  // теперь грид, а не дерево
+            items: [me.createVehicleList()]
         });
 
         var mainPanel = me.createMainPanel();
@@ -101,51 +100,42 @@ Ext.define('Store.sensor_dashboard.Module', {
         return origin + '/' + endpoint;
     },
 
-    // Получение плоского списка всех ТС (без папок)
-    loadFlatVehicles: function (callback) {
+    // Создание плоского списка ТС (без дерева, только один столбец "ТС")
+    createVehicleList: function () {
         var me = this;
         var apiUrl = me.getApiUrl('ax/tree.php');
 
-        Ext.Ajax.request({
-            url: apiUrl,
-            params: { vehs: 1, state: 1 },
-            success: function (response) {
-                var data = Ext.decode(response.responseText);
-                var vehicles = [];
-                // Рекурсивный сбор всех узлов, у которых есть vehid
-                function collect(nodes) {
-                    Ext.each(nodes, function (node) {
-                        if (node.vehid) {
-                            vehicles.push({
-                                vehid: node.vehid,
-                                name: node.name,
-                                model: node.model,
-                                year: node.year,
-                                ibutton: node.ibutton || node.ble_label || node.ble_tag || ''
+        var store = Ext.create('Ext.data.Store', {
+            fields: ['vehid', 'name'],
+            proxy: {
+                type: 'ajax',
+                url: apiUrl,
+                extraParams: { vehs: 1, state: 1 },
+                reader: {
+                    type: 'json',
+                    rootProperty: 'children',
+                    transform: function(data) {
+                        // Преобразуем иерархическое дерево в плоский список всех ТС
+                        var vehicles = [];
+                        function traverse(nodes) {
+                            Ext.each(nodes, function(node) {
+                                if (node.vehid) {
+                                    vehicles.push({
+                                        vehid: node.vehid,
+                                        name: node.name
+                                    });
+                                }
+                                if (node.children && node.children.length) {
+                                    traverse(node.children);
+                                }
                             });
                         }
-                        if (node.children && node.children.length) {
-                            collect(node.children);
-                        }
-                    });
+                        traverse(data);
+                        return vehicles;
+                    }
                 }
-                collect(data);
-                callback(vehicles);
             },
-            failure: function () {
-                Ext.Msg.alert('Ошибка', 'Не удалось загрузить список транспортных средств');
-                callback([]);
-            }
-        });
-    },
-
-    // Создание грида с плоским списком ТС (без колонок "Год" и "Метка BLE")
-    createVehicleGrid: function () {
-        var me = this;
-
-        var store = Ext.create('Ext.data.Store', {
-            fields: ['vehid', 'name', 'model', 'year', 'ibutton'],
-            data: []
+            autoLoad: true
         });
 
         var grid = Ext.create('Ext.grid.Panel', {
@@ -155,27 +145,18 @@ Ext.define('Store.sensor_dashboard.Module', {
                 dataIndex: 'name',
                 flex: 1
             }],
-            viewConfig: {
-                stripeRows: true,
-                emptyText: 'Загрузка...'
-            },
             listeners: {
                 selectionchange: function (selModel, selected) {
                     if (selected && selected.length) {
                         var record = selected[0];
-                        if (record.get('vehid')) {
-                            me.loadConfigForVehicle(record.get('vehid'), record.get('name'));
-                        } else {
-                            me.clearConfigForm();
-                        }
+                        var vehid = record.get('vehid');
+                        var name = record.get('name');
+                        me.loadConfigForVehicle(vehid, name);
+                    } else {
+                        me.clearConfigForm();
                     }
                 }
             }
-        });
-
-        // Загружаем данные
-        me.loadFlatVehicles(function (vehicles) {
-            store.loadData(vehicles);
         });
 
         return grid;
@@ -337,19 +318,17 @@ Ext.define('Store.sensor_dashboard.Module', {
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
     },
 
-    // Обновление дашборда на основе всех ТС (собираем из грида)
     refreshDashboard: function () {
         var me = this;
         var store = me.mainPanel.dashboardStore;
         if (!store) return;
 
-        // Получаем все vehid из левого грида
+        // Получаем все ТС из грида (плоский список)
         var grid = me.navTab.items.get(0);
         var allVehicles = [];
-        if (grid && grid.getStore) {
-            var gridStore = grid.getStore();
-            gridStore.each(function (rec) {
-                allVehicles.push(rec.get('vehid'));
+        if (grid && grid.getStore()) {
+            grid.getStore().each(function(record) {
+                allVehicles.push(record.get('vehid'));
             });
         }
         var totalVehicleCount = allVehicles.length;
@@ -382,8 +361,10 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     clearConfigForm: function () {
         var mainPanel = this.mainPanel;
-        mainPanel.sensorsContainer.removeAll();
-        mainPanel.vehicleLabel.setText('ТС не выбрано');
+        if (mainPanel && mainPanel.sensorsContainer) {
+            mainPanel.sensorsContainer.removeAll();
+            mainPanel.vehicleLabel.setText('ТС не выбрано');
+        }
         this.currentVehid = null;
         this.refreshDashboard();
     }
