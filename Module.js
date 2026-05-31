@@ -1,11 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
- * Правая панель: таблица датчиков реализована как Ext.grid.Panel с динамическими колонками.
- * Каждый заголовок датчика имеет контекстное меню (стрелка) с опциями:
- *   - Выбрать все
- *   - Снять все
- *   - Фильтровать по этому датчику (аналог клика по строке статистики).
+ * Правая панель: таблица датчиков как Ext.grid.Panel с контекстным меню в заголовках.
+ * Исправлены ошибки работы с гридами.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -26,6 +23,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
+        // Левая панель
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
@@ -43,6 +41,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.mainPanel = mainPanel;
         me.navTab = navTab;
 
+        // Наблюдение за изменением размера диаграммы
         me.resizeObserver = new ResizeObserver(function() {
             if (me.chart) me.chart.reflow();
         });
@@ -268,54 +267,49 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        // Хранилище для одной строки данных (текущее ТС)
+        // Store для одной строки (текущее ТС)
         var sensorsStore = Ext.create('Ext.data.Store', {
             fields: me.sensors.map(function(s) { return s.name; }),
             data: [{}]
         });
 
-        // Динамическое создание колонок для каждого датчика
+        // Функция создания меню для заголовка
+        function getColumnMenu(sensor) {
+            return [
+                {
+                    text: 'Выбрать все',
+                    handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, true); }
+                },
+                {
+                    text: 'Снять все',
+                    handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, false); }
+                },
+                {
+                    text: 'Фильтровать по этому датчику',
+                    handler: function() {
+                        if (me.sensorFilterCombo) {
+                            me.sensorFilterCombo.setValue(sensor.name);
+                            me.applyVehicleFilters();
+                        }
+                    }
+                }
+            ];
+        }
+
+        // Колонки с меню
         var columns = [];
         Ext.each(me.sensors, function(sensor) {
             columns.push({
                 text: sensor.label,
                 dataIndex: sensor.name,
-                width: 100,
                 flex: 1,
-                menuDisabled: false,  // включаем меню
-                renderer: function(value, meta, record) {
-                    // Используем checkcolumn? Нет, стандартный рендер checkbox
-                    return '<input type="checkbox" ' + (value === 'yes' ? 'checked' : '') + ' style="pointer-events:none;">';
+                menu: getColumnMenu(sensor),  // прямое свойство menu, а не header.menu
+                renderer: function(value) {
+                    var checked = (value === 'yes');
+                    return '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="pointer-events:none;">';
                 },
-                editor: {
-                    xtype: 'checkbox',
-                    checked: function(val) { return val === 'yes'; },
-                    setValue: function(val) { this.setChecked(val === 'yes'); }
-                },
-                // Контекстное меню для заголовка
-                header: {
-                    title: sensor.label,
-                    menu: {
-                        items: [
-                            {
-                                text: 'Выбрать все',
-                                handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, true); }
-                            },
-                            {
-                                text: 'Снять все',
-                                handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, false); }
-                            },
-                            {
-                                text: 'Фильтровать по этому датчику',
-                                handler: function() {
-                                    if (me.sensorFilterCombo) {
-                                        me.sensorFilterCombo.setValue(sensor.name);
-                                        me.applyVehicleFilters();
-                                    }
-                                }
-                            }
-                        ]
-                    }
+                field: {
+                    xtype: 'checkboxfield'
                 }
             });
         });
@@ -326,21 +320,18 @@ Ext.define('Store.sensor_dashboard.Module', {
             columns: columns,
             height: 80,
             viewConfig: { stripeRows: false, enableTextSelection: false },
+            selType: 'cellmodel',
             plugins: [Ext.create('Ext.grid.plugin.CellEditing', { clicksToEdit: 1 })],
             listeners: {
-                beforeedit: function(editor, context) {
-                    // Разрешаем редактирование (чекбокс)
-                    return true;
-                },
                 edit: function(editor, context) {
                     var newValue = context.value ? 'yes' : 'no';
                     var record = context.record;
                     record.set(context.field, newValue);
-                    // Автосохранение при изменении? Оставим кнопку «Применить»
                 }
             }
         });
 
+        // Статистика
         var dashboardStore = Ext.create('Ext.data.Store', {
             fields: ['sensorLabel', 'sensorName', 'totalVehicles', 'enabledCount', 'percentage'],
             data: []
@@ -352,10 +343,10 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoHeight: true,
             scrollable: false,
             columns: [
-                { text: 'Датчик', dataIndex: 'sensorLabel', flex: 2, menuDisabled: false },
-                { text: 'Всего ТС', dataIndex: 'totalVehicles', flex: 1, menuDisabled: false },
-                { text: 'Включено', dataIndex: 'enabledCount', flex: 1, menuDisabled: false },
-                { text: '%', dataIndex: 'percentage', flex: 1, renderer: function(v) { return v + ' %'; }, menuDisabled: false }
+                { text: 'Датчик', dataIndex: 'sensorLabel', flex: 2 },
+                { text: 'Всего ТС', dataIndex: 'totalVehicles', flex: 1 },
+                { text: 'Включено', dataIndex: 'enabledCount', flex: 1 },
+                { text: '%', dataIndex: 'percentage', flex: 1, renderer: function(v) { return v + ' %'; } }
             ],
             viewConfig: { stripeRows: true, emptyText: 'Нет данных' },
             listeners: {
@@ -420,8 +411,7 @@ Ext.define('Store.sensor_dashboard.Module', {
     setAllCheckboxesForCurrentVehicle: function(sensorName, value) {
         var me = this;
         if (!me.currentVehid) return;
-        var store = me.mainPanel.sensorsStore;
-        var record = store.getAt(0);
+        var record = me.mainPanel.sensorsStore.getAt(0);
         if (record) {
             record.set(sensorName, value ? 'yes' : 'no');
         }
@@ -436,13 +426,11 @@ Ext.define('Store.sensor_dashboard.Module', {
         var saved = localStorage.getItem(storageKey);
         var values = saved ? JSON.parse(saved) : {};
 
-        // Заполняем store грида датчиков
         var recordData = {};
         Ext.each(me.sensors, function(sensor) {
             recordData[sensor.name] = (values[sensor.name] === 'yes') ? 'yes' : 'no';
         });
-        var store = me.mainPanel.sensorsStore;
-        store.loadData([recordData]);
+        me.mainPanel.sensorsStore.loadData([recordData]);
 
         me.currentVehid = vehid;
         me.currentVehicleName = vehicleName;
