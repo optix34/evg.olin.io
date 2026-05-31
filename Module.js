@@ -2,7 +2,8 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы для выбранного ТС и дашборд.
- * Неактивные чекбоксы – чёрные, чёткие, без прозрачности (как активные), только с иконкой замка.
+ * Чекбоксы и названия всегда чёрные, чёткие (без прозрачности), как в активном режиме.
+ * Для неактивных чекбоксов только иконка замка.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -52,6 +53,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 margin: 5px 15px 5px 0;
                 white-space: nowrap;
             }
+            /* Замок для неактивных полей */
             .sensor-checkbox-item.locked .x-form-cb-label:after {
                 content: " 🔒";
                 font-size: 11px;
@@ -72,7 +74,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             .dashboard-grid .x-grid-header {
                 background: #f5f5f5;
             }
-            /* Все чекбоксы и подписи – чёрные, чёткие */
+            /* Все чекбоксы и их подписи – чёрные, чёткие, без прозрачности */
             .x-form-cb-label {
                 color: #000000 !important;
                 font-weight: normal !important;
@@ -81,11 +83,10 @@ Ext.define('Store.sensor_dashboard.Module', {
             .x-form-checkbox {
                 opacity: 1 !important;
             }
-            /* Неактивные – такие же чёрные, без прозрачности, без серого фона */
+            /* Неактивные чекбоксы – такой же чёткий вид, но с возможностью отличить через замок */
             .x-form-checkbox:disabled {
                 opacity: 1 !important;
                 background-color: transparent !important;
-                border-color: #666666 !important;
             }
             .x-form-field:disabled + .x-form-cb-label {
                 opacity: 1 !important;
