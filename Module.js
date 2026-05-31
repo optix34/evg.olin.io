@@ -3,7 +3,8 @@
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
  * Под таблицей статистики – увеличенная столбчатая диаграмма Highcharts.
- * Каждый столбец (датчик) имеет свой цвет, диаграмма читаема, контейнер увеличен.
+ * Каждый столбец (датчик) имеет свой цвет, диаграмма читаема.
+ * Добавлен вертикальный скроллинг для правого окна, переименован датчик КПП → BLE.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -14,7 +15,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         { name: 'tablo', label: 'Табло' },
         { name: 'voice', label: 'Голос' },
         { name: 'tf', label: 'ТФ' },
-        { name: 'kpp', label: 'КПП' },
+        { name: 'kpp', label: 'BLE' },        // переименовано
         { name: 'thg', label: 'ТХГ' },
         { name: 'dut', label: 'ДУТ' },
         { name: 'temp_sensor', label: 'Датчик t' }
@@ -91,7 +92,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 border-radius: 4px;
                 padding: 10px;
                 overflow: visible !important;
-                height: 450px;  /* увеличенная высота */
+                height: 450px;
             }
         `;
         document.head.appendChild(styleEl);
@@ -353,7 +354,8 @@ Ext.define('Store.sensor_dashboard.Module', {
                 dashboardPanel,
                 { xtype: 'component', height: 10 },
                 chartContainer
-            ]
+            ],
+            autoScroll: true   // добавлен вертикальный скроллинг
         });
 
         mainPanel.sensorsContainer = fieldContainer;
