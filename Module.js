@@ -3,7 +3,7 @@
  * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками.
  * Правая панель: таблица датчиков через widgetcolumn с чекбоксами (checkboxfield).
  * Чекбоксы статичны, правильно отображают состояние (галочка/нет).
- * Изменения сохраняются через кнопку «Применить».
+ * Иконка BLE изменена на fa-bluetooth.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -14,7 +14,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         { name: 'tablo', label: 'Табло', icon: 'fa-braille' },
         { name: 'voice', label: 'Голос', icon: 'fa-volume-up' },
         { name: 'tf', label: 'ТФ', icon: 'fa-tablet' },
-        { name: 'kpp', label: 'BLE', icon: 'fa-bluetooth-b' },
+        { name: 'kpp', label: 'BLE', icon: 'fa-bluetooth' },      // изменено с fa-bluetooth-b
         { name: 'thg', label: 'ТХГ', icon: 'fa-id-card' },
         { name: 'dut', label: 'ДУТ', icon: 'fa-tint' },
         { name: 'temp_sensor', label: 'Датчик t', icon: 'fa-thermometer-full' }
@@ -309,7 +309,6 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        // Хранилище для одной строки (текущее ТС) – значения boolean
         var sensorsStore = Ext.create('Ext.data.Store', {
             fields: me.sensors.map(function(s) { return s.name; }),
             data: [{}]
@@ -349,8 +348,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 xtype: 'widgetcolumn',
                 widget: {
                     xtype: 'checkboxfield',
-                    // Привязка к значению поля записи (автоматически через setValue)
-                    // Устанавливаем параметры для правильного преобразования boolean
                     inputValue: true,
                     uncheckedValue: false,
                     listeners: {
@@ -453,7 +450,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         if (!me.currentVehid) return;
         var record = me.mainPanel.sensorsStore.getAt(0);
         if (record) {
-            record.set(sensorName, value); // value boolean
+            record.set(sensorName, value);
         }
     },
 
@@ -468,7 +465,6 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var recordData = {};
         Ext.each(me.sensors, function(sensor) {
-            // Преобразуем 'yes'/'no' в boolean
             recordData[sensor.name] = (values[sensor.name] === 'yes');
         });
         me.mainPanel.sensorsStore.loadData([recordData]);
@@ -487,7 +483,6 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var values = {};
         Ext.each(me.sensors, function(sensor) {
-            // Преобразуем boolean в 'yes'/'no'
             values[sensor.name] = record.get(sensor.name) ? 'yes' : 'no';
         });
 
