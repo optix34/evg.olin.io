@@ -2,7 +2,7 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: таблица датчиков (заголовки датчиков, под ними чекбоксы).
- * Чекбоксы распределены по всей ширине таблицы.
+ * Чекбоксы отцентрованы по горизонтали и вертикали в каждой ячейке.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -67,6 +67,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             .sensors-table th, .sensors-table td {
                 text-align: center;
+                vertical-align: middle;
                 padding: 8px 4px;
                 border: 1px solid #e0e4e8;
             }
@@ -77,6 +78,12 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             .sensors-table td {
                 background: #ffffff;
+            }
+            /* Центрирование чекбокса внутри ячейки */
+            .sensors-table td .x-form-checkbox {
+                display: inline-block;
+                vertical-align: middle;
+                margin: 0 auto;
             }
             .dashboard-panel {
                 margin: 15px 10px;
@@ -283,10 +290,9 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        // Контейнер для таблицы датчиков (заголовки + чекбоксы)
         var sensorsContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
-            html: '<table class="sensors-table" id="sensorsTable"><thead><tr id="sensorsHeaderRow"></tr></thead><tbody><tr id="sensorsCheckboxRow"></tr></tbody></table>',
+            html: '<table class="sensors-table" id="sensorsTable"><thead><tr id="sensorsHeaderRow"></td></thead><tbody><tr id="sensorsCheckboxRow"></table></tbody></table>',
             padding: 0
         });
 
@@ -380,7 +386,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var saved = localStorage.getItem(storageKey);
         var values = saved ? JSON.parse(saved) : {};
 
-        // Заполняем таблицу: заголовки и чекбоксы
         var headerRow = document.getElementById('sensorsHeaderRow');
         var checkboxRow = document.getElementById('sensorsCheckboxRow');
         if (!headerRow || !checkboxRow) return;
@@ -389,22 +394,22 @@ Ext.define('Store.sensor_dashboard.Module', {
         checkboxRow.innerHTML = '';
 
         Ext.each(me.sensors, function(sensor) {
-            // Заголовок
             var th = document.createElement('th');
             th.textContent = sensor.label;
             headerRow.appendChild(th);
 
-            // Ячейка с чекбоксом
             var td = document.createElement('td');
+            td.style.textAlign = 'center';
+            td.style.verticalAlign = 'middle';
             var cb = Ext.create('Ext.form.field.Checkbox', {
                 renderTo: td,
                 checked: (values[sensor.name] === 'yes'),
                 disabled: false,
                 itemId: sensor.name
             });
-            td.style.textAlign = 'center';
+            // Принудительно центрируем чекбокс (сам компонент Ext может иметь свои стили)
+            cb.getEl().setStyle('display', 'inline-block');
             checkboxRow.appendChild(td);
-            // Сохраняем ссылку на чекбокс для быстрого доступа
             cb.wrapperTd = td;
         });
 
