@@ -2,7 +2,8 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: таблица датчиков как Ext.grid.Panel с контекстным меню в заголовках.
- * Исправлены ошибки работы с гридами.
+ * Исправлена ошибка создания меню (isXType is not a function).
+ * Отключена accessibility в Highcharts для убирания предупреждения.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -23,7 +24,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        // Левая панель
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
@@ -41,7 +41,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.mainPanel = mainPanel;
         me.navTab = navTab;
 
-        // Наблюдение за изменением размера диаграммы
         me.resizeObserver = new ResizeObserver(function() {
             if (me.chart) me.chart.reflow();
         });
@@ -273,8 +272,8 @@ Ext.define('Store.sensor_dashboard.Module', {
             data: [{}]
         });
 
-        // Функция создания меню для заголовка
-        function getColumnMenu(sensor) {
+        // Функция создания пунктов меню (возвращает массив)
+        function getMenuItems(sensor) {
             return [
                 {
                     text: 'Выбрать все',
@@ -296,14 +295,16 @@ Ext.define('Store.sensor_dashboard.Module', {
             ];
         }
 
-        // Колонки с меню
         var columns = [];
         Ext.each(me.sensors, function(sensor) {
             columns.push({
                 text: sensor.label,
                 dataIndex: sensor.name,
                 flex: 1,
-                menu: getColumnMenu(sensor),  // прямое свойство menu, а не header.menu
+                // Свойство menu должно быть объектом с items (массивом пунктов)
+                menu: {
+                    items: getMenuItems(sensor)
+                },
                 renderer: function(value) {
                     var checked = (value === 'yes');
                     return '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="pointer-events:none;">';
@@ -331,7 +332,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
         });
 
-        // Статистика
         var dashboardStore = Ext.create('Ext.data.Store', {
             fields: ['sensorLabel', 'sensorName', 'totalVehicles', 'enabledCount', 'percentage'],
             data: []
@@ -520,6 +520,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             chart: { type: 'column', backgroundColor: 'transparent', width: null },
             title: { text: 'Количество ТС с включённым датчиком', style: { fontSize: '16px', fontWeight: 'bold' } },
             subtitle: { text: 'Всего ТС: ' + totalVehicleCount, style: { fontSize: '13px', color: '#555' } },
+            accessibility: { enabled: false },  // отключаем предупреждение
             xAxis: { categories: categories, title: { text: 'Датчики' }, labels: { rotation: -45 } },
             yAxis: { title: { text: 'Количество ТС' }, min: 0, allowDecimals: false },
             tooltip: { headerFormat: '<b>{point.x}</b><br/>', pointFormat: '{point.y} из {point.total} ТС ({point.percentage:.1f}%)' },
