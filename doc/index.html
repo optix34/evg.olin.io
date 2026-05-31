@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Sensor Dashboard – PILOT Extension Documentation</title>
+    <title>Расширение PILOT – Доп. Оборудование | Документация</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -10,78 +10,155 @@
             margin: 2rem auto;
             padding: 0 20px;
             line-height: 1.6;
+            color: #1e2a3a;
         }
-        h1 { color: #2c3e50; }
-        h2 { color: #34495e; border-bottom: 1px solid #eee; padding-bottom: 0.3rem; }
+        h1 { color: #1e466e; border-bottom: 2px solid #e0e4e8; padding-bottom: 0.5rem; }
+        h2 { color: #2c3e50; margin-top: 1.5rem; border-left: 4px solid #2c7bb6; padding-left: 0.75rem; }
+        h3 { color: #2c3e50; margin-top: 1.2rem; }
         code {
-            background: #f4f4f4;
+            background: #f0f2f5;
             padding: 0.2rem 0.4rem;
             border-radius: 4px;
             font-family: monospace;
+            font-size: 0.9em;
         }
         pre {
-            background: #f8f8f8;
+            background: #f8f9fa;
             padding: 1rem;
             border-radius: 8px;
             overflow-x: auto;
+            border: 1px solid #e0e4e8;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1rem 0;
+        }
+        th, td {
+            border: 1px solid #e0e4e8;
+            padding: 8px 10px;
+            text-align: left;
+        }
+        th {
+            background: #f5f7fa;
+        }
+        .note {
+            background: #fff3e0;
+            border-left: 4px solid #f7a35c;
+            padding: 0.75rem 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+        }
+        footer {
+            margin-top: 2rem;
+            font-size: 0.85em;
+            color: #6c757d;
+            border-top: 1px solid #e0e4e8;
+            padding-top: 1rem;
         }
     </style>
 </head>
 <body>
-    <h1>Sensor Dashboard for PILOT GPS</h1>
-    <p><strong>Version:</strong> 1.0</p>
-    <p><strong>Extension name:</strong> <code>sensor_dashboard</code></p>
+    <h1>Расширение PILOT: «Доп. Оборудование»</h1>
+    <p><strong>Версия:</strong> 1.0</p>
+    <p><strong>Имя расширения (slug):</strong> <code>sensor_dashboard</code></p>
 
-    <h2>Description</h2>
-    <p>This extension displays all available sensors and their current values for any vehicle selected from the left navigation tree.</p>
-    <p>It uses standard PILOT endpoints:</p>
+    <h2>1. Назначение</h2>
+    <p>Учёт и визуализация дополнительного оборудования на каждом транспортном средстве: АОГ, Видео, Табло, Голос, ТФ, BLE, ТХГ, ДУТ, Датчик t. Все настройки сохраняются в <code>localStorage</code> браузера.</p>
+
+    <h2>2. Основные функции</h2>
+    <h3>Левая панель – список ТС</h3>
     <ul>
-        <li><code>/ax/tree.php?vehs=1&state=1</code> – retrieves the list of vehicles (hierarchical).</li>
-        <li><code>/ax/state.php?vehid=XXX</code> – retrieves the current sensor values for a specific vehicle.</li>
+        <li>Отображает все транспортные средства из PILOT (<code>/ax/tree.php</code>).</li>
+        <li>Колонка <strong>«Датчики»</strong> – иконки включённого оборудования.</li>
+        <li>Поле <strong>«Поиск ТС»</strong> – фильтр по названию.</li>
+        <li>Выпадающий список <strong>«Фильтр по датчику»</strong> – показывает только ТС с выбранным датчиком.</li>
     </ul>
 
-    <h2>Features</h2>
+    <h3>Правая панель – настройка датчиков для выбранного ТС</h3>
     <ul>
-        <li>Left panel with vehicle tree (groups + vehicles).</li>
-        <li>Dynamic grid showing all sensor keys and values.</li>
-        <li>Automatic unit formatting using PILOT helpers (<code>speedSS</code>, <code>mileageSS</code>, <code>num</code>) when available.</li>
-        <li>Refresh button to reload data for the selected vehicle.</li>
-        <li>Graceful error handling and loading indicators.</li>
+        <li>Таблица, где каждый датчик – отдельная колонка с чекбоксом.</li>
+        <li>Щелчок по чекбоксу – изменение состояния (включено/выключено).</li>
+        <li>Контекстное меню в заголовке колонки (стрелка):
+            <ul>
+                <li><strong>Выбрать все</strong> – включить датчик для текущего ТС.</li>
+                <li><strong>Снять все</strong> – выключить.</li>
+                <li><strong>Фильтровать по этому датчику</strong> – применить фильтр в левой панели.</li>
+            </ul>
+        </li>
+        <li>Кнопка <strong>«Применить»</strong> – сохранить изменения в <code>localStorage</code> и обновить иконки/статистику.</li>
     </ul>
 
-    <h2>Installation & Hosting</h2>
-    <p>Upload the following files to a public HTTPS host (e.g., Cloudflare Pages, GitHub Pages, or your own server):</p>
+    <h3>Таблица «Статистика по всем объектам»</h3>
+    <ul>
+        <li>Показывает для каждого датчика: общее количество ТС, количество включённых и процент.</li>
+        <li>Клик по строке – автоматическая фильтрация левого списка по этому датчику.</li>
+    </ul>
+
+    <h3>Диаграмма (Highcharts)</h3>
+    <ul>
+        <li>Столбчатая диаграмма: количество ТС с включённым датчиком по каждому типу.</li>
+        <li>Адаптируется под ширину окна, интерактивные подсказки.</li>
+    </ul>
+
+    <h2>3. Иконки датчиков в левой панели</h2>
+    <table>
+        <thead>
+            <tr><th>Датчик</th><th>Иконка Font Awesome</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>АОГ</td><td><code>fa-bullseye</code></td></tr>
+            <tr><td>Видео</td><td><code>fa-video-camera</code></td></tr>
+            <tr><td>Табло</td><td><code>fa-braille</code></td></tr>
+            <tr><td>Голос</td><td><code>fa-volume-up</code></td></tr>
+            <tr><td>ТФ</td><td><code>fa-tablet</code></td></tr>
+            <tr><td>BLE</td><td><code>fa-bluetooth</code></td></tr>
+            <tr><td>ТХГ</td><td><code>fa-id-card</code></td></tr>
+            <tr><td>ДУТ</td><td><code>fa-tint</code></td></tr>
+            <tr><td>Датчик t</td><td><code>fa-thermometer-full</code></td></tr>
+        </tbody>
+    </table>
+
+    <h2>4. Сохранение данных</h2>
+    <p>Ключи в <code>localStorage</code> – <code>sensor_dashboard_&lt;vehid&gt;</code>. Данные не синхронизируются между браузерами.</p>
+
+    <h2>5. Установка и развертывание</h2>
+    <p>Структура расширения:</p>
     <pre>
 sensor_dashboard/
-├── index.html
 ├── Module.js
-├── style.css
+├── index.html          (может быть пустым)
+├── style.css           (опционально)
 └── doc/
-    └── index.html
+    └── index.html      (этот файл)
     </pre>
-    <p>After uploading, verify that <code>https://YOUR-HOST/Module.js</code> is accessible. Then in PILOT Admin → Applications → Add, set:</p>
+    <p>Разместите файлы на любом HTTPS-хостинге (Cloudflare Pages, GitHub Pages, VPS). Убедитесь, что <code>Module.js</code> доступен по прямой ссылке: <code>https://ваш-хост/Module.js</code>.</p>
+    <p>В админ‑панели PILOT → Applications → Add:</p>
     <ul>
-        <li><strong>Name:</strong> Sensor Dashboard</li>
-        <li><strong>URL:</strong> <code>https://YOUR-HOST/</code> (with trailing slash)</li>
-    </ul>
-    <p>Ensure the extension slug is <code>sensor_dashboard</code> (lowercase snake_case). PILOT will proxy it as <code>/store/sensor_dashboard/...</code>.</p>
-
-    <h2>Usage</h2>
-    <ol>
-        <li>After loading PILOT, click on the "Sensor Dashboard" tab in the left navigation (icon: microchip).</li>
-        <li>Expand the vehicle tree and click on any vehicle.</li>
-        <li>The main panel will display all available sensors and their current values.</li>
-        <li>Use the "Refresh" button to reload data.</li>
-    </ol>
-
-    <h2>Limitations</h2>
-    <ul>
-        <li>Sensor list depends on what <code>/ax/state.php</code> returns; not all vehicles may have the same sensors.</li>
-        <li>No historical data – only current values.</li>
-        <li>The tree may show groups/folders without vehicles; they are ignored for sensor loading.</li>
+        <li><strong>Name</strong>: Доп. Оборудование (любое)</li>
+        <li><strong>URL</strong>: базовый URL вашего хостинга (например, <code>https://ваш-хост/</code>)</li>
+        <li><strong>Extension name (slug)</strong>: <code>sensor_dashboard</code> (обязательно)</li>
     </ul>
 
-    <h2>Source Code & License</h2>
-    <p>This extension is provided under the Apache 2.0 license. See the main PILOT Extensions repository for details.</p>
+    <h2>6. Требования к окружению</h2>
+    <ul>
+        <li>PILOT GPS с поддержкой внешних расширений.</li>
+        <li>Загруженные библиотеки: Ext JS 7.7+, Highcharts, Font Awesome.</li>
+    </ul>
+
+    <div class="note">
+        <strong>Примечание:</strong> Расширение не использует серверную часть – вся логика на стороне клиента. Никакие данные не отправляются на внешние серверы.
+    </div>
+
+    <h2>7. Возможные проблемы</h2>
+    <ul>
+        <li><strong>Не загружается список ТС:</strong> проверьте URL в админке PILOT и доступность <code>Module.js</code>.</li>
+        <li><strong>Чекбоксы не сохраняются:</strong> убедитесь, что <code>localStorage</code> не заблокирован (очистите кэш).</li>
+        <li><strong>Иконки отсутствуют:</strong> на странице PILOT должен быть подключён Font Awesome (обычно есть).</li>
+    </ul>
+
+    <footer>
+        © 2025, для внутреннего использования PILOT. Лицензия Apache 2.0.
+    </footer>
 </body>
 </html>
