@@ -1,8 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель (обычная): поиск по ТС + фильтр по датчику.
+ * Левая панель (обычная, без выдвижного меню): поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Диаграмма растягивается на всю ширину, без кнопок сворачивания.
+ * Диаграмма растягивается на всю ширину правого окна, без кнопок экспорта и контекстного меню.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -23,6 +23,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
+        // Левая панель – обычная панель (без выдвижного меню)
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
@@ -40,6 +41,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.mainPanel = mainPanel;
         me.navTab = navTab;
 
+        // Наблюдение за изменением размера для перерисовки диаграммы
         me.resizeObserver = new ResizeObserver(function() {
             if (me.chart) {
                 me.chart.reflow();
@@ -336,7 +338,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             cls: 'dashboard-panel',
             layout: 'fit',
             items: [dashboardGrid],
-            collapsible: false,      // кнопка сворачивания убрана
+            collapsible: true,
             collapsed: false,
             autoHeight: true
         });
@@ -560,6 +562,9 @@ Ext.define('Store.sensor_dashboard.Module', {
                 }
             }],
             credits: { enabled: false },
+            exporting: { enabled: false },          // отключаем кнопку экспорта
+            navigation: { buttonOptions: { enabled: false } }, // отключаем кнопки навигации
+            legend: { enabled: false },              // можно убрать легенду (одна серия)
             responsive: {
                 rules: [{
                     condition: { maxWidth: 600 },
