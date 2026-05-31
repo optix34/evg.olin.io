@@ -1,8 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель: плоский список ТС (без дерева папок), одна колонка "ТС".
+ * Левая панель: плоский список ТС с полем поиска.
  * Правая панель: чекбоксы для выбранного ТС и дашборд статистики.
- * Неактивные чекбоксы – полная видимость, чёрный текст, иконка замка.
+ * Стили соответствуют документации PILOT.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -89,6 +89,11 @@ Ext.define('Store.sensor_dashboard.Module', {
                 opacity: 1 !important;
                 color: #000000 !important;
             }
+            /* Стиль для поля поиска */
+            .vehicle-search-field {
+                margin: 5px;
+                width: 100%;
+            }
         `;
         document.head.appendChild(styleEl);
     },
@@ -100,7 +105,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         return origin + '/' + endpoint;
     },
 
-    // Создание плоского списка ТС (без дерева, только один столбец "ТС")
+    // Создание плоского списка ТС с полем поиска
     createVehicleList: function () {
         var me = this;
         var apiUrl = me.getApiUrl('ax/tree.php');
@@ -115,7 +120,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                     type: 'json',
                     rootProperty: 'children',
                     transform: function(data) {
-                        // Преобразуем иерархическое дерево в плоский список всех ТС
                         var vehicles = [];
                         function traverse(nodes) {
                             Ext.each(nodes, function(node) {
@@ -138,6 +142,35 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoLoad: true
         });
 
+        // Поле поиска с кнопкой очистки
+        var searchField = Ext.create('Ext.form.field.Text', {
+            cls: 'vehicle-search-field',
+            emptyText: 'Поиск ТС...',
+            enableKeyEvents: true,
+            triggers: {
+                clear: {
+                    cls: 'x-form-clear-trigger',
+                    handler: function() {
+                        searchField.reset();
+                        store.clearFilter();
+                    }
+                }
+            },
+            listeners: {
+                keyup: function(field) {
+                    var value = field.getValue();
+                    if (Ext.isEmpty(value)) {
+                        store.clearFilter();
+                    } else {
+                        store.filterBy(function(record) {
+                            var name = record.get('name');
+                            return name && name.toLowerCase().indexOf(value.toLowerCase()) !== -1;
+                        });
+                    }
+                }
+            }
+        });
+
         var grid = Ext.create('Ext.grid.Panel', {
             store: store,
             columns: [{
@@ -145,6 +178,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 dataIndex: 'name',
                 flex: 1
             }],
+            tbar: [searchField],
             listeners: {
                 selectionchange: function (selModel, selected) {
                     if (selected && selected.length) {
@@ -323,11 +357,13 @@ Ext.define('Store.sensor_dashboard.Module', {
         var store = me.mainPanel.dashboardStore;
         if (!store) return;
 
-        // Получаем все ТС из грида (плоский список)
         var grid = me.navTab.items.get(0);
         var allVehicles = [];
         if (grid && grid.getStore()) {
-            grid.getStore().each(function(record) {
+            // Используем исходный store без фильтра, чтобы статистика считалась по всем ТС
+            var originalStore = grid.getStore();
+            allVehicles = [];
+            originalStore.each(function(record) {
                 allVehicles.push(record.get('vehid'));
             });
         }
