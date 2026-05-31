@@ -2,7 +2,7 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: таблица датчиков (заголовки датчиков, под ними чекбоксы).
- * Чекбоксы отцентрованы по горизонтали и вертикали в каждой ячейке.
+ * Стиль таблицы датчиков полностью соответствует стилю таблицы «Статистика по всем объектам».
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -54,6 +54,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
+            /* Общий контейнер таблицы датчиков */
             .sensors-panel {
                 margin: 15px 10px 0 10px;
                 background: #ffffff;
@@ -61,30 +62,42 @@ Ext.define('Store.sensor_dashboard.Module', {
                 border-radius: 4px;
                 overflow: hidden;
             }
+            /* Стили таблицы датчиков – как у грида статистики */
             .sensors-table {
                 width: 100%;
                 border-collapse: collapse;
-            }
-            .sensors-table th, .sensors-table td {
-                text-align: center;
-                vertical-align: middle;
-                padding: 8px 4px;
-                border: 1px solid #e0e4e8;
+                font-family: inherit;
+                font-size: 13px;
             }
             .sensors-table th {
-                background: #f5f7fa;
+                background: #f5f5f5;
                 font-weight: bold;
-                font-size: 13px;
+                color: #1e466e;
+                padding: 8px 4px;
+                text-align: center;
+                border-bottom: 1px solid #e0e4e8;
+                border-right: 1px solid #e0e4e8;
+            }
+            .sensors-table th:last-child {
+                border-right: none;
             }
             .sensors-table td {
                 background: #ffffff;
+                padding: 8px 4px;
+                text-align: center;
+                vertical-align: middle;
+                border-right: 1px solid #e0e4e8;
+                border-bottom: none;
             }
-            /* Центрирование чекбокса внутри ячейки */
+            .sensors-table td:last-child {
+                border-right: none;
+            }
+            /* Центрирование чекбоксов */
             .sensors-table td .x-form-checkbox {
                 display: inline-block;
                 vertical-align: middle;
-                margin: 0 auto;
             }
+            /* Панель статистики */
             .dashboard-panel {
                 margin: 15px 10px;
                 background: #ffffff;
@@ -292,7 +305,7 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var sensorsContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
-            html: '<table class="sensors-table" id="sensorsTable"><thead><tr id="sensorsHeaderRow"></td></thead><tbody><tr id="sensorsCheckboxRow"></table></tbody></table>',
+            html: '<table class="sensors-table" id="sensorsTable"><thead><tr id="sensorsHeaderRow"></td></thead><tbody><tr id="sensorsCheckboxRow"></td></tbody></table>',
             padding: 0
         });
 
@@ -407,7 +420,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 disabled: false,
                 itemId: sensor.name
             });
-            // Принудительно центрируем чекбокс (сам компонент Ext может иметь свои стили)
             cb.getEl().setStyle('display', 'inline-block');
             checkboxRow.appendChild(td);
             cb.wrapperTd = td;
