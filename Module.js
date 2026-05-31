@@ -1,23 +1,23 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками.
+ * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками + кнопка импорта CSV.
  * Правая панель: таблица датчиков через widgetcolumn с чекбоксами (checkboxfield).
- * Чекбоксы статичны, правильно отображают состояние (галочка/нет).
- * Иконка BLE изменена на fa-bluetooth.
+ * Импорт CSV: загружает файл с колонками (гос.номер, видео, табло, голос, тф, BLE, тхг, дут, датчик t)
+ * и обновляет настройки датчиков для найденных транспортных средств.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
     sensors: [
-        { name: 'aog', label: 'АОГ', icon: 'fa-bullseye' },
-        { name: 'video', label: 'Видео', icon: 'fa-video-camera' },
-        { name: 'tablo', label: 'Табло', icon: 'fa-braille' },
-        { name: 'voice', label: 'Голос', icon: 'fa-volume-up' },
-        { name: 'tf', label: 'ТФ', icon: 'fa-tablet' },
-        { name: 'kpp', label: 'BLE', icon: 'fa-bluetooth' },      // изменено с fa-bluetooth-b
-        { name: 'thg', label: 'ТХГ', icon: 'fa-id-card' },
-        { name: 'dut', label: 'ДУТ', icon: 'fa-tint' },
-        { name: 'temp_sensor', label: 'Датчик t', icon: 'fa-thermometer-full' }
+        { name: 'aog', label: 'АОГ', icon: 'fa-bullseye', csvCol: null },        // нет в CSV
+        { name: 'video', label: 'Видео', icon: 'fa-video-camera', csvCol: 'видео' },
+        { name: 'tablo', label: 'Табло', icon: 'fa-braille', csvCol: 'табло' },
+        { name: 'voice', label: 'Голос', icon: 'fa-volume-up', csvCol: 'голос' },
+        { name: 'tf', label: 'ТФ', icon: 'fa-tablet', csvCol: 'тф' },
+        { name: 'kpp', label: 'BLE', icon: 'fa-bluetooth', csvCol: 'BLE' },
+        { name: 'thg', label: 'ТХГ', icon: 'fa-id-card', csvCol: 'тхг' },
+        { name: 'dut', label: 'ДУТ', icon: 'fa-tint', csvCol: 'дут' },
+        { name: 'temp_sensor', label: 'Датчик t', icon: 'fa-thermometer-full', csvCol: 'датчик t' }
     ],
 
     initModule: function () {
@@ -80,6 +80,9 @@ Ext.define('Store.sensor_dashboard.Module', {
                 margin: 5px;
                 width: 180px;
             }
+            .import-csv-btn {
+                margin: 5px;
+            }
             .chart-container {
                 margin: 0 10px 15px 10px;
                 background: #ffffff;
@@ -128,7 +131,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var apiUrl = me.getApiUrl('ax/tree.php');
 
         var fullStore = Ext.create('Ext.data.Store', {
-            fields: ['vehid', 'name', 'icons'],
+            fields: ['vehid', 'name', 'plate', 'icons'],
             proxy: {
                 type: 'ajax',
                 url: apiUrl,
@@ -144,6 +147,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                                     vehicles.push({
                                         vehid: node.vehid,
                                         name: node.name,
+                                        plate: node.plate || node.gos_number || '',
                                         icons: me.getSensorIconsHtml(node.vehid)
                                     });
                                 }
@@ -189,13 +193,23 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
         });
 
+        // Кнопка импорта CSV
+        var importBtn = Ext.create('Ext.button.Button', {
+            cls: 'import-csv-btn',
+            iconCls: 'fa fa-file-excel-o',
+            tooltip: 'Импорт датчиков из CSV',
+            handler: function() {
+                me.importCsv();
+            }
+        });
+
         var grid = Ext.create('Ext.grid.Panel', {
-            store: Ext.create('Ext.data.Store', { fields: ['vehid', 'name', 'icons'], data: [] }),
+            store: Ext.create('Ext.data.Store', { fields: ['vehid', 'name', 'plate', 'icons'], data: [] }),
             columns: [
                 { text: 'ТС', dataIndex: 'name', flex: 2 },
                 { text: 'Датчики', dataIndex: 'icons', flex: 1, renderer: function(v) { return v || '—'; } }
             ],
-            tbar: [searchField, sensorFilterCombo],
+            tbar: [searchField, sensorFilterCombo, '->', importBtn],
             listeners: {
                 selectionchange: function(selModel, selected) {
                     if (selected && selected.length) {
@@ -220,6 +234,105 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
 
         return grid;
+    },
+
+    // Импорт CSV
+    importCsv: function() {
+        var me = this;
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.csv';
+        input.onchange = function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(evt) {
+                var content = evt.target.result;
+                me.processCsv(content);
+            };
+            reader.readAsText(file, 'UTF-8');
+        };
+        input.click();
+    },
+
+    processCsv: function(csvContent) {
+        var me = this;
+        var lines = csvContent.split(/\r?\n/);
+        if (lines.length === 0) return;
+        var headers = lines[0].split(',').map(function(h) { return h.trim().toLowerCase(); });
+        // Ожидаемые колонки: гос.номер, видео, табло, голос, тф, ble, тхг, дут, датчик t
+        var expectedCols = ['гос.номер', 'видео', 'табло', 'голос', 'тф', 'ble', 'тхг', 'дут', 'датчик t'];
+        var colMap = {};
+        for (var i = 0; i < expectedCols.length; i++) {
+            var expected = expectedCols[i];
+            var idx = headers.indexOf(expected);
+            if (idx === -1) {
+                Ext.Msg.alert('Ошибка', 'В CSV отсутствует колонка "' + expected + '"');
+                return;
+            }
+            colMap[expected] = idx;
+        }
+
+        var updated = 0;
+        for (var rowIdx = 1; rowIdx < lines.length; rowIdx++) {
+            var line = lines[rowIdx].trim();
+            if (line === '') continue;
+            var parts = line.split(',');
+            if (parts.length < expectedCols.length) continue;
+            var plate = parts[colMap['гос.номер']].trim();
+            if (plate === '') continue;
+            // Найти ТС по гос.номеру в fullStore
+            var foundRecord = null;
+            me.vehicleFullStore.each(function(rec) {
+                var recPlate = rec.get('plate');
+                if (recPlate && recPlate.toLowerCase() === plate.toLowerCase()) {
+                    foundRecord = rec;
+                    return false;
+                }
+            });
+            if (!foundRecord) {
+                console.warn('ТС с номером ' + plate + ' не найдено');
+                continue;
+            }
+            var vehid = foundRecord.get('vehid');
+            // Получить текущие значения датчиков
+            var storageKey = 'sensor_dashboard_' + vehid;
+            var saved = localStorage.getItem(storageKey);
+            var values = saved ? JSON.parse(saved) : {};
+            // Заполняем по колонкам
+            var sensorMapping = {
+                'видео': 'video',
+                'табло': 'tablo',
+                'голос': 'voice',
+                'тф': 'tf',
+                'ble': 'kpp',      // BLE -> kpp
+                'тхг': 'thg',
+                'дут': 'dut',
+                'датчик t': 'temp_sensor'
+            };
+            for (var col in sensorMapping) {
+                var csvVal = parts[colMap[col]].trim().toLowerCase();
+                var sensorName = sensorMapping[col];
+                var isYes = (csvVal === 'да' || csvVal === 'yes' || csvVal === '1' || csvVal === 'true');
+                values[sensorName] = isYes ? 'yes' : 'no';
+            }
+            // Сохранить
+            localStorage.setItem(storageKey, JSON.stringify(values));
+            updated++;
+            // Обновить иконки в левом списке
+            me.updateVehicleIcons(vehid);
+        }
+        Ext.Msg.alert('Импорт завершён', 'Обновлено ТС: ' + updated);
+        // Обновить фильтры и дашборд
+        me.applyVehicleFilters();
+        me.refreshDashboard();
+        // Если текущее выбранное ТС было обновлено – перезагрузить его конфигурацию
+        if (me.currentVehid) {
+            var currentRecord = me.vehicleGridStore.findRecord('vehid', me.currentVehid);
+            if (currentRecord) {
+                me.loadConfigForVehicle(me.currentVehid, currentRecord.get('name'));
+            }
+        }
     },
 
     applyVehicleFilters: function() {
@@ -252,6 +365,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             filtered.push(Ext.create('Ext.data.Model', {
                 vehid: vehid,
                 name: name,
+                plate: record.get('plate'),
                 icons: iconsHtml
             }));
         });
@@ -303,6 +417,11 @@ Ext.define('Store.sensor_dashboard.Module', {
         if (record) {
             var newIcons = me.getSensorIconsHtml(vehid);
             record.set('icons', newIcons);
+        }
+        // Также обновить в fullStore (чтобы при повторной фильтрации иконки были свежими)
+        var fullRecord = me.vehicleFullStore.findRecord('vehid', vehid);
+        if (fullRecord) {
+            fullRecord.set('icons', me.getSensorIconsHtml(vehid));
         }
     },
 
