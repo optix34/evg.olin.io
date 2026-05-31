@@ -1,10 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель: поиск по ТС + фильтр по датчику (ComboBox).
- * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Чекбоксы равномерно распределены по всей ширине, отступы от края минимальны.
- * Клик по строке таблицы статистики фильтрует ТС по датчику.
- * Датчик t отображается как "t" (без слова "Датчик").
+ * Левая панель: поиск по ТС + фильтр по датчику.
+ * Правая панель: таблица датчиков (заголовки датчиков, под ними чекбоксы).
+ * Чекбоксы распределены по всей ширине таблицы.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -18,7 +16,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         { name: 'kpp', label: 'BLE' },
         { name: 'thg', label: 'ТХГ' },
         { name: 'dut', label: 'ДУТ' },
-        { name: 'temp_sensor', label: 't' }          // переименовано: "Датчик t" → "t"
+        { name: 'temp_sensor', label: 'Датчик t' }
     ],
 
     initModule: function () {
@@ -63,30 +61,22 @@ Ext.define('Store.sensor_dashboard.Module', {
                 border-radius: 4px;
                 overflow: hidden;
             }
-            .sensors-hbox-container {
-                display: flex !important;
-                flex-wrap: wrap;
-                padding: 12px 8px 12px 4px;
-                background: transparent;
+            .sensors-table {
+                width: 100%;
+                border-collapse: collapse;
             }
-            .sensor-checkbox-item {
-                flex: 1 1 auto;
-                min-width: 100px;
-                margin: 5px 6px 5px 0;
-                white-space: nowrap;
-                display: flex;
-                align-items: center;
+            .sensors-table th, .sensors-table td {
+                text-align: center;
+                padding: 8px 4px;
+                border: 1px solid #e0e4e8;
             }
-            .sensor-checkbox-item .x-form-cb-label {
-                margin-left: 4px;
-                white-space: nowrap;
+            .sensors-table th {
+                background: #f5f7fa;
+                font-weight: bold;
+                font-size: 13px;
             }
-            .x-form-cb-label {
-                color: #000000 !important;
-                font-weight: normal !important;
-            }
-            .x-form-checkbox {
-                opacity: 1 !important;
+            .sensors-table td {
+                background: #ffffff;
             }
             .dashboard-panel {
                 margin: 15px 10px;
@@ -169,10 +159,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             emptyText: 'Поиск ТС...',
             enableKeyEvents: true,
             triggers: {
-                clear: {
-                    cls: 'x-form-clear-trigger',
-                    handler: function() { searchField.reset(); me.applyVehicleFilters(); }
-                }
+                clear: { cls: 'x-form-clear-trigger', handler: function() { searchField.reset(); me.applyVehicleFilters(); } }
             },
             listeners: { keyup: function() { me.applyVehicleFilters(); } }
         });
@@ -182,9 +169,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             emptyText: 'Фильтр по датчику',
             store: Ext.create('Ext.data.Store', {
                 fields: ['value', 'label'],
-                data: [
-                    { value: null, label: 'Все датчики' }
-                ].concat(Ext.Array.map(me.sensors, function(s) {
+                data: [{ value: null, label: 'Все датчики' }].concat(Ext.Array.map(me.sensors, function(s) {
                     return { value: s.name, label: s.label };
                 }))
             }),
@@ -298,16 +283,17 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        var fieldContainer = Ext.create('Ext.container.Container', {
+        // Контейнер для таблицы датчиков (заголовки + чекбоксы)
+        var sensorsContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
-            layout: 'hbox',
-            cls: 'sensors-hbox-container'
+            html: '<table class="sensors-table" id="sensorsTable"><thead><tr id="sensorsHeaderRow"></tr></thead><tbody><tr id="sensorsCheckboxRow"></tr></tbody></table>',
+            padding: 0
         });
 
         var sensorsPanel = Ext.create('Ext.panel.Panel', {
             cls: 'sensors-panel',
             layout: 'fit',
-            items: [fieldContainer]
+            items: [sensorsContainer]
         });
 
         var dashboardStore = Ext.create('Ext.data.Store', {
@@ -376,7 +362,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoScroll: true
         });
 
-        mainPanel.sensorsContainer = fieldContainer;
+        mainPanel.sensorsContainer = sensorsContainer;
         mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
         mainPanel.dashboardStore = dashboardStore;
         mainPanel.dashboardGrid = dashboardGrid;
@@ -387,31 +373,39 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     loadConfigForVehicle: function (vehid, vehicleName) {
         var me = this;
-        var container = me.mainPanel.sensorsContainer;
         var label = me.mainPanel.vehicleLabel;
-
         label.setText(vehicleName);
-        container.removeAll();
 
         var storageKey = 'sensor_dashboard_' + vehid;
         var saved = localStorage.getItem(storageKey);
         var values = saved ? JSON.parse(saved) : {};
 
-        Ext.each(me.sensors, function (sensor) {
-            var checked = (values[sensor.name] === 'yes');
-            var checkbox = Ext.create('Ext.form.field.Checkbox', {
-                fieldLabel: sensor.label,
-                labelAlign: 'right',
-                itemId: sensor.name,
-                checked: checked,
-                disabled: false
+        // Заполняем таблицу: заголовки и чекбоксы
+        var headerRow = document.getElementById('sensorsHeaderRow');
+        var checkboxRow = document.getElementById('sensorsCheckboxRow');
+        if (!headerRow || !checkboxRow) return;
+
+        headerRow.innerHTML = '';
+        checkboxRow.innerHTML = '';
+
+        Ext.each(me.sensors, function(sensor) {
+            // Заголовок
+            var th = document.createElement('th');
+            th.textContent = sensor.label;
+            headerRow.appendChild(th);
+
+            // Ячейка с чекбоксом
+            var td = document.createElement('td');
+            var cb = Ext.create('Ext.form.field.Checkbox', {
+                renderTo: td,
+                checked: (values[sensor.name] === 'yes'),
+                disabled: false,
+                itemId: sensor.name
             });
-            var wrapper = Ext.create('Ext.container.Container', {
-                cls: 'sensor-checkbox-item',
-                items: [checkbox],
-                margin: '0 8 0 0'
-            });
-            container.add(wrapper);
+            td.style.textAlign = 'center';
+            checkboxRow.appendChild(td);
+            // Сохраняем ссылку на чекбокс для быстрого доступа
+            cb.wrapperTd = td;
         });
 
         me.currentVehid = vehid;
@@ -423,11 +417,18 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         if (!me.currentVehid) return;
 
-        var container = me.mainPanel.sensorsContainer;
+        var checkboxRow = document.getElementById('sensorsCheckboxRow');
+        if (!checkboxRow) return;
+
         var values = {};
-        Ext.each(me.sensors, function (sensor) {
-            var checkbox = container.down('#' + sensor.name);
-            if (checkbox) values[sensor.name] = checkbox.checked ? 'yes' : 'no';
+        Ext.each(me.sensors, function(sensor, idx) {
+            var td = checkboxRow.cells[idx];
+            if (td && td.children.length) {
+                var checkbox = Ext.getCmp(td.children[0].id);
+                if (checkbox) {
+                    values[sensor.name] = checkbox.checked ? 'yes' : 'no';
+                }
+            }
         });
 
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
@@ -516,11 +517,11 @@ Ext.define('Store.sensor_dashboard.Module', {
     },
 
     clearConfigForm: function () {
-        var mainPanel = this.mainPanel;
-        if (mainPanel && mainPanel.sensorsContainer) {
-            mainPanel.sensorsContainer.removeAll();
-            mainPanel.vehicleLabel.setText('ТС не выбрано');
-        }
+        var headerRow = document.getElementById('sensorsHeaderRow');
+        var checkboxRow = document.getElementById('sensorsCheckboxRow');
+        if (headerRow) headerRow.innerHTML = '';
+        if (checkboxRow) checkboxRow.innerHTML = '';
+        if (this.mainPanel) this.mainPanel.vehicleLabel.setText('ТС не выбрано');
         this.currentVehid = null;
         this.refreshDashboard();
     }
