@@ -2,8 +2,8 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Под таблицей статистики – набор круговых диаграмм (по одной на датчик),
- * показывающих долю ТС с включённым датчиком.
+ * Под таблицей статистики – увеличенная столбчатая диаграмма Highcharts.
+ * Каждый столбец (датчик) имеет свой цвет, диаграмма читаема, контейнер увеличен.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -84,28 +84,14 @@ Ext.define('Store.sensor_dashboard.Module', {
                 margin: 5px;
                 width: 180px;
             }
-            .pie-charts-container {
+            .chart-container {
                 margin: 0 10px 15px 10px;
                 background: #ffffff;
                 border: 1px solid #e0e4e8;
                 border-radius: 4px;
                 padding: 10px;
-            }
-            .pie-chart-grid {
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: space-around;
-            }
-            .pie-chart-item {
-                width: 200px;
-                height: 200px;
-                margin: 10px;
-                text-align: center;
-            }
-            .pie-chart-title {
-                font-weight: bold;
-                margin-bottom: 5px;
-                font-size: 12px;
+                overflow: visible !important;
+                height: 450px;  /* увеличенная высота */
             }
         `;
         document.head.appendChild(styleEl);
@@ -343,11 +329,11 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoHeight: true
         });
 
-        var pieChartsContainer = Ext.create('Ext.container.Container', {
-            cls: 'pie-charts-container',
-            itemId: 'pieChartsContainer',
-            layout: 'fit',
-            autoScroll: true
+        var chartContainer = Ext.create('Ext.container.Container', {
+            cls: 'chart-container',
+            height: 450,
+            itemId: 'chartContainer',
+            html: '<div id="sensorChart" style="width:100%; height:100%;"></div>'
         });
 
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
@@ -366,7 +352,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 { xtype: 'component', height: 10 },
                 dashboardPanel,
                 { xtype: 'component', height: 10 },
-                pieChartsContainer
+                chartContainer
             ]
         });
 
@@ -374,7 +360,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
         mainPanel.dashboardStore = dashboardStore;
         mainPanel.dashboardGrid = dashboardGrid;
-        mainPanel.pieChartsContainer = pieChartsContainer;
+        mainPanel.chartContainer = chartContainer;
 
         return mainPanel;
     },
@@ -432,7 +418,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         localStorage.setItem(storageKey, JSON.stringify(values));
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
         me.applyVehicleFilters();
-        me.refreshDashboard();
     },
 
     refreshDashboard: function () {
@@ -462,6 +447,8 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
 
         var data = [];
+        var categories = [];
+        var seriesData = [];
         Ext.each(me.sensors, function(sensor) {
             var enabled = totals[sensor.name];
             var percent = totalVehicleCount ? Math.round((enabled / totalVehicleCount) * 100) : 0;
@@ -471,72 +458,104 @@ Ext.define('Store.sensor_dashboard.Module', {
                 enabledCount: enabled,
                 percentage: percent
             });
+            categories.push(sensor.label);
+            seriesData.push(enabled);
         });
         store.loadData(data);
 
-        me.renderPieCharts(totals, totalVehicleCount);
+        me.renderChart(categories, seriesData, totalVehicleCount);
     },
 
-    renderPieCharts: function(totals, totalVehicleCount) {
+    renderChart: function (categories, seriesData, totalVehicleCount) {
         var me = this;
-        var container = me.mainPanel.pieChartsContainer;
+        var container = me.mainPanel.chartContainer;
         if (!container) return;
 
-        // Очищаем контейнер
-        container.removeAll();
+        var el = document.getElementById('sensorChart');
+        if (!el) {
+            container.update('<div id="sensorChart" style="width:100%; height:100%;"></div>');
+            el = document.getElementById('sensorChart');
+        }
+        if (!el) return;
 
-        // Создаём контейнер-сетку
-        var gridContainer = Ext.create('Ext.container.Container', {
-            layout: 'hbox',
-            cls: 'pie-chart-grid',
-            flex: 1,
-            autoScroll: true,
-            defaultType: 'container'
-        });
+        if (typeof Highcharts === 'undefined') {
+            el.innerHTML = '<div style="padding:20px; text-align:center;">Highcharts не загружен</div>';
+            return;
+        }
 
-        // Для каждого датчика создаём круговую диаграмму
-        Ext.each(me.sensors, function(sensor) {
-            var enabledCount = totals[sensor.name];
-            var disabledCount = totalVehicleCount - enabledCount;
+        if (me.chart) {
+            me.chart.destroy();
+        }
 
-            // Данные для пирога: включено / не включено
-            var pieData = [
-                { name: 'Включено (' + enabledCount + ')', y: enabledCount, color: '#2c7bb6' },
-                { name: 'Не включено (' + disabledCount + ')', y: disabledCount, color: '#d6e5f2' }
-            ];
+        // Набор ярких цветов для каждого датчика
+        var colors = [
+            '#7cb5ec', '#434348', '#90ed7d', '#f7a35c', '#8085e9',
+            '#f15c80', '#e4d354', '#2b908f', '#f45b5b', '#91e8e1'
+        ];
 
-            // Создаём уникальный ID для контейнера диаграммы
-            var chartId = 'pie_' + sensor.name + '_' + Ext.id();
-            var itemContainer = Ext.create('Ext.container.Container', {
-                cls: 'pie-chart-item',
-                html: '<div class="pie-chart-title">' + sensor.label + '</div><div id="' + chartId + '" style="width:100%; height:160px;"></div>'
-            });
-            gridContainer.add(itemContainer);
-
-            // Отложенная отрисовка диаграммы после рендера элемента
-            itemContainer.on('afterrender', function() {
-                if (typeof Highcharts === 'undefined') return;
-                var el = document.getElementById(chartId);
-                if (el) {
-                    Highcharts.chart(el, {
-                        chart: { type: 'pie', backgroundColor: 'transparent', plotBackgroundColor: null },
-                        title: { text: '' },
-                        tooltip: { pointFormat: '{point.percentage:.1f}% ({point.y} ТС)' },
-                        plotOptions: {
-                            pie: {
-                                size: '80%',
-                                dataLabels: { enabled: true, format: '{point.percentage:.1f}%', distance: -25, style: { fontSize: '10px', fontWeight: 'bold' } },
-                                showInLegend: false
-                            }
-                        },
-                        series: [{ data: pieData, name: sensor.label }],
-                        credits: { enabled: false }
-                    });
+        me.chart = Highcharts.chart(el, {
+            chart: {
+                type: 'column',
+                backgroundColor: 'transparent',
+                style: { fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif' }
+            },
+            title: {
+                text: 'Количество ТС с включённым датчиком',
+                style: { fontSize: '16px', fontWeight: 'bold' }
+            },
+            subtitle: {
+                text: 'Всего ТС: ' + totalVehicleCount,
+                style: { fontSize: '13px', color: '#555' }
+            },
+            xAxis: {
+                categories: categories,
+                title: { text: 'Датчики', style: { fontSize: '13px' } },
+                labels: { rotation: -45, style: { fontSize: '12px' } }
+            },
+            yAxis: {
+                title: { text: 'Количество ТС', style: { fontSize: '13px' } },
+                min: 0,
+                allowDecimals: false
+            },
+            tooltip: {
+                headerFormat: '<b>{point.x}</b><br/>',
+                pointFormat: '{point.y} из {point.total} ТС ({point.percentage:.1f}%)',
+                shared: false
+            },
+            plotOptions: {
+                column: {
+                    colorByPoint: true,
+                    dataLabels: {
+                        enabled: true,
+                        format: '{point.y}',
+                        style: { fontWeight: 'bold', fontSize: '12px' }
+                    },
+                    pointWidth: 55,
+                    groupPadding: 0.1,
+                    pointPadding: 0.2,
+                    borderWidth: 0
                 }
-            });
+            },
+            colors: colors,
+            series: [{
+                name: 'Включено',
+                data: seriesData,
+                tooltip: {
+                    pointFormatter: function() {
+                        return '<b>' + this.y + '</b> из <b>' + totalVehicleCount + '</b> ТС';
+                    }
+                }
+            }],
+            credits: { enabled: false },
+            responsive: {
+                rules: [{
+                    condition: { maxWidth: 600 },
+                    chartOptions: {
+                        xAxis: { labels: { rotation: -90 } }
+                    }
+                }]
+            }
         });
-
-        container.add(gridContainer);
     },
 
     clearConfigForm: function () {
