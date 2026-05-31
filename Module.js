@@ -1,10 +1,9 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель (обычная): поиск по ТС + фильтр по датчику (ComboBox).
+ * Левая панель: поиск по ТС + фильтр по датчику (ComboBox).
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
+ * Таблица статистики: клик по строке датчика применяет фильтр по этому датчику в левом списке.
  * Диаграмма растягивается на всю ширину, без кнопок экспорта.
- * Таблица "Статистика по всем объектам" кликабельна – при клике на строку
- * в левом списке остаются только ТС, у которых выбранный датчик активен.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -95,8 +94,8 @@ Ext.define('Store.sensor_dashboard.Module', {
             .dashboard-grid .x-grid-row {
                 cursor: pointer;
             }
-            .dashboard-grid .x-grid-row-over {
-                background-color: #eef2f7;
+            .dashboard-grid .x-grid-row:hover {
+                background: #f0f7ff;
             }
             .vehicle-search-field, .sensor-filter-combo {
                 margin: 5px;
@@ -322,8 +321,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             items: [fieldContainer]
         });
 
+        // Хранилище для таблицы статистики
         var dashboardStore = Ext.create('Ext.data.Store', {
-            fields: ['sensor', 'totalVehicles', 'enabledCount', 'percentage'],
+            fields: ['sensorLabel', 'sensorName', 'totalVehicles', 'enabledCount', 'percentage'],
             data: []
         });
 
@@ -333,7 +333,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoHeight: true,
             scrollable: false,
             columns: [
-                { text: 'Датчик', dataIndex: 'sensor', flex: 2 },
+                { text: 'Датчик', dataIndex: 'sensorLabel', flex: 2 },
                 { text: 'Всего ТС', dataIndex: 'totalVehicles', flex: 1 },
                 { text: 'Включено', dataIndex: 'enabledCount', flex: 1 },
                 { text: '%', dataIndex: 'percentage', flex: 1, renderer: function(v) { return v + ' %'; } }
@@ -341,21 +341,10 @@ Ext.define('Store.sensor_dashboard.Module', {
             viewConfig: { stripeRows: true, emptyText: 'Нет данных' },
             listeners: {
                 itemclick: function(view, record) {
-                    // Получаем label датчика из записи
-                    var sensorLabel = record.get('sensor');
-                    // Находим соответствующий name в me.sensors
-                    var sensor = me.sensors.find(function(s) {
-                        return s.label === sensorLabel;
-                    });
-                    if (sensor) {
-                        var currentValue = me.sensorFilterCombo.getValue();
-                        if (currentValue === sensor.name) {
-                            // Если уже выбран этот датчик – сбрасываем фильтр (Все датчики)
-                            me.sensorFilterCombo.setValue(null);
-                        } else {
-                            // Иначе устанавливаем выбранный датчик
-                            me.sensorFilterCombo.setValue(sensor.name);
-                        }
+                    // Клик по строке таблицы статистики
+                    var sensorName = record.get('sensorName');
+                    if (sensorName && me.sensorFilterCombo) {
+                        me.sensorFilterCombo.setValue(sensorName);
                         me.applyVehicleFilters();
                     }
                 }
@@ -497,7 +486,8 @@ Ext.define('Store.sensor_dashboard.Module', {
             var enabled = totals[sensor.name];
             var percent = totalVehicleCount ? Math.round((enabled / totalVehicleCount) * 100) : 0;
             data.push({
-                sensor: sensor.label,
+                sensorLabel: sensor.label,
+                sensorName: sensor.name,
                 totalVehicles: totalVehicleCount,
                 enabledCount: enabled,
                 percentage: percent
