@@ -1,8 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель: поиск по ТС + фильтр по датчику.
- * Правая панель: чекбоксы распределены на всю ширину, отступы уменьшены,
- * контейнер чекбоксов выровнен с таблицей статистики.
+ * Левая панель: поиск по ТС + фильтр по датчику (ComboBox).
+ * Правая панель: чекбоксы всегда активны, кнопка «Применить».
+ * Чекбоксы равномерно распределены по всей ширине, отступы от края минимальны.
  * Клик по строке таблицы статистики фильтрует ТС по датчику.
  */
 Ext.define('Store.sensor_dashboard.Module', {
@@ -65,25 +65,20 @@ Ext.define('Store.sensor_dashboard.Module', {
             .sensors-hbox-container {
                 display: flex !important;
                 flex-wrap: wrap;
-                padding: 8px 8px;               /* уменьшен отступ слева и справа */
+                padding: 12px 8px 12px 4px;  /* уменьшен отступ слева */
                 background: transparent;
-                box-sizing: border-box;
-                width: 100%;
             }
             .sensor-checkbox-item {
                 flex: 1 1 auto;
-                min-width: 105px;
-                margin: 4px 6px 4px 0;
+                min-width: 100px;
+                margin: 5px 6px 5px 0;
                 white-space: nowrap;
                 display: flex;
                 align-items: center;
-                box-sizing: border-box;
             }
             .sensor-checkbox-item .x-form-cb-label {
-                margin-left: 5px;
+                margin-left: 4px;
                 white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
             }
             .x-form-cb-label {
                 color: #000000 !important;
@@ -408,13 +403,12 @@ Ext.define('Store.sensor_dashboard.Module', {
                 labelAlign: 'right',
                 itemId: sensor.name,
                 checked: checked,
-                disabled: false,
-                labelCls: 'x-form-cb-label'
+                disabled: false
             });
             var wrapper = Ext.create('Ext.container.Container', {
                 cls: 'sensor-checkbox-item',
                 items: [checkbox],
-                margin: '0 6 0 0'           // уменьшен правый отступ
+                margin: '0 8 0 0'
             });
             container.add(wrapper);
         });
