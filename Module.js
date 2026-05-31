@@ -1,8 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику (ComboBox).
- * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Таблица статистики: клик по строке датчика применяет фильтр по этому датчику в левом списке.
+ * Правая панель: чекбоксы с подписью рядом (справа), всегда активны, кнопка «Применить».
+ * Таблица статистики: клик по строке датчика применяет фильтр по этому датчику.
  * Диаграмма растягивается на всю ширину, без кнопок экспорта.
  */
 Ext.define('Store.sensor_dashboard.Module', {
@@ -321,7 +321,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             items: [fieldContainer]
         });
 
-        // Хранилище для таблицы статистики
         var dashboardStore = Ext.create('Ext.data.Store', {
             fields: ['sensorLabel', 'sensorName', 'totalVehicles', 'enabledCount', 'percentage'],
             data: []
@@ -341,7 +340,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             viewConfig: { stripeRows: true, emptyText: 'Нет данных' },
             listeners: {
                 itemclick: function(view, record) {
-                    // Клик по строке таблицы статистики
                     var sensorName = record.get('sensorName');
                     if (sensorName && me.sensorFilterCombo) {
                         me.sensorFilterCombo.setValue(sensorName);
@@ -412,13 +410,12 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         Ext.each(me.sensors, function (sensor) {
             var checked = (values[sensor.name] === 'yes');
+            // Чекбокс с подписью рядом (boxLabel)
             var checkbox = Ext.create('Ext.form.field.Checkbox', {
-                fieldLabel: sensor.label,
-                labelAlign: 'right',
+                boxLabel: sensor.label,
                 itemId: sensor.name,
                 checked: checked,
-                disabled: false,
-                labelCls: 'x-form-cb-label'
+                disabled: false
             });
             var wrapper = Ext.create('Ext.container.Container', {
                 cls: 'sensor-checkbox-item',
