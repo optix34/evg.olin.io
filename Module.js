@@ -1,10 +1,9 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Верхняя часть: чекбоксы для выбранного ТС (АОГ, Видео, Табло и т.д.)
+ * Левое окно: плоский список транспортных средств (без папок), только колонка "ТС".
+ * Правое окно: чекбоксы для выбранного ТС (АОГ, Видео, Табло и т.д.)
  * Нижняя часть: дашборд со статистикой по всем объектам.
- * Стили не конфликтуют с системными, используют стандартные классы PILOT.
- * Левая вкладка – Pilot.utils.LeftBarPanel.
- * Неактивные чекбоксы – полная видимость (opacity: 1), чёрный текст, иконка замка.
+ * Неактивные чекбоксы – полная видимость, чёрный текст, иконка замка.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -30,7 +29,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             iconCls: 'fa fa-microchip',
             iconAlign: 'top',
             minimized: true,
-            items: [me.createVehicleTree()]
+            items: [me.createVehicleGrid()]  // теперь грид, а не дерево
         });
 
         var mainPanel = me.createMainPanel();
@@ -74,7 +73,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             .dashboard-grid .x-grid-header {
                 background: #f5f5f5;
             }
-            /* Полная видимость для всех элементов, без прозрачности */
             .x-form-cb-label {
                 color: #000000 !important;
                 font-weight: normal !important;
@@ -83,7 +81,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             .x-form-checkbox {
                 opacity: 1 !important;
             }
-            /* Неактивные чекбоксы – полная видимость, чёрный текст, замок */
             .x-form-checkbox:disabled {
                 opacity: 1 !important;
                 background-color: #f0f0f0 !important;
@@ -104,51 +101,64 @@ Ext.define('Store.sensor_dashboard.Module', {
         return origin + '/' + endpoint;
     },
 
-    createVehicleTree: function () {
+    // Получение плоского списка всех ТС (без папок)
+    loadFlatVehicles: function (callback) {
         var me = this;
         var apiUrl = me.getApiUrl('ax/tree.php');
 
-        var treeStore = Ext.create('Ext.data.TreeStore', {
-            proxy: {
-                type: 'ajax',
-                url: apiUrl,
-                extraParams: { vehs: 1, state: 1 },
-                reader: { type: 'json', rootProperty: 'children' }
+        Ext.Ajax.request({
+            url: apiUrl,
+            params: { vehs: 1, state: 1 },
+            success: function (response) {
+                var data = Ext.decode(response.responseText);
+                var vehicles = [];
+                // Рекурсивный сбор всех узлов, у которых есть vehid
+                function collect(nodes) {
+                    Ext.each(nodes, function (node) {
+                        if (node.vehid) {
+                            vehicles.push({
+                                vehid: node.vehid,
+                                name: node.name,
+                                model: node.model,
+                                year: node.year,
+                                ibutton: node.ibutton || node.ble_label || node.ble_tag || ''
+                            });
+                        }
+                        if (node.children && node.children.length) {
+                            collect(node.children);
+                        }
+                    });
+                }
+                collect(data);
+                callback(vehicles);
             },
-            root: { expanded: true, text: 'Все ТС' }
+            failure: function () {
+                Ext.Msg.alert('Ошибка', 'Не удалось загрузить список транспортных средств');
+                callback([]);
+            }
+        });
+    },
+
+    // Создание грида с плоским списком ТС (без колонок "Год" и "Метка BLE")
+    createVehicleGrid: function () {
+        var me = this;
+
+        var store = Ext.create('Ext.data.Store', {
+            fields: ['vehid', 'name', 'model', 'year', 'ibutton'],
+            data: []
         });
 
-        var tree = Ext.create('Ext.tree.Panel', {
-            store: treeStore,
-            rootVisible: true,
-            useArrows: true,
+        var grid = Ext.create('Ext.grid.Panel', {
+            store: store,
             columns: [{
-                xtype: 'treecolumn',
                 text: 'ТС',
                 dataIndex: 'name',
-                flex: 2
-            }, {
-                text: 'Метка BLE (IButton)',
-                dataIndex: 'ibutton',
-                flex: 1,
-                renderer: function (v, meta, record) {
-                    if (v) return v;
-                    if (record && record.get) {
-                        if (record.get('iButton')) return record.get('iButton');
-                        if (record.get('ibtn')) return record.get('ibtn');
-                        if (record.get('key_id')) return record.get('key_id');
-                        if (record.get('ble_label')) return record.get('ble_label');
-                        if (record.get('ble_tag')) return record.get('ble_tag');
-                        if (record.get('ble')) return record.get('ble');
-                    }
-                    return '—';
-                }
-            }, {
-                text: 'Год',
-                dataIndex: 'year',
-                flex: 1,
-                renderer: function (v) { return v || '—'; }
+                flex: 1
             }],
+            viewConfig: {
+                stripeRows: true,
+                emptyText: 'Загрузка...'
+            },
             listeners: {
                 selectionchange: function (selModel, selected) {
                     if (selected && selected.length) {
@@ -163,7 +173,12 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
         });
 
-        return tree;
+        // Загружаем данные
+        me.loadFlatVehicles(function (vehicles) {
+            store.loadData(vehicles);
+        });
+
+        return grid;
     },
 
     createMainPanel: function () {
@@ -322,15 +337,21 @@ Ext.define('Store.sensor_dashboard.Module', {
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
     },
 
+    // Обновление дашборда на основе всех ТС (собираем из грида)
     refreshDashboard: function () {
         var me = this;
         var store = me.mainPanel.dashboardStore;
         if (!store) return;
 
+        // Получаем все vehid из левого грида
+        var grid = me.navTab.items.get(0);
         var allVehicles = [];
-        var tree = me.navTab.items.get(0);
-        var rootNode = tree.getRootNode();
-        me.collectVehicles(rootNode, allVehicles);
+        if (grid && grid.getStore) {
+            var gridStore = grid.getStore();
+            gridStore.each(function (rec) {
+                allVehicles.push(rec.get('vehid'));
+            });
+        }
         var totalVehicleCount = allVehicles.length;
 
         var totals = {};
@@ -357,19 +378,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             });
         });
         store.loadData(data);
-    },
-
-    collectVehicles: function(node, array) {
-        var me = this;
-        if (node.get('vehid')) {
-            array.push(node.get('vehid'));
-        }
-        var childNodes = node.childNodes;
-        if (childNodes) {
-            Ext.each(childNodes, function(child) {
-                me.collectVehicles(child, array);
-            });
-        }
     },
 
     clearConfigForm: function () {
