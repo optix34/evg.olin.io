@@ -2,8 +2,8 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками + кнопка импорта CSV.
  * Правая панель: таблица датчиков через widgetcolumn с чекбоксами.
- * Импорт CSV: загружает файл с колонками (АОГ, Видео, Табло, Голос, ТФ, BLE, ТХГ, ДУТ, Датчик t)
- * и обновляет настройки датчиков для найденных транспортных средств (по гос. номеру).
+ * Импорт CSV: загружает файл с колонками (гос.номер, АОГ, Видео, Табло, Голос, ТФ, BLE, ТХГ, ДУТ, Датчик t)
+ * и обновляет настройки датчиков для найденных транспортных средств.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -82,18 +82,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             .import-csv-btn {
                 margin: 5px;
-                background: #28a745 !important;
-                border-color: #28a745 !important;
-                color: white !important;
-            }
-            .import-csv-btn .x-btn-inner {
-                color: white !important;
-            }
-            .import-csv-btn .x-btn-icon-el {
-                color: white !important;
-            }
-            .import-csv-btn:hover {
-                background: #218838 !important;
             }
             .chart-container {
                 margin: 0 10px 15px 10px;
@@ -205,11 +193,10 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
         });
 
+        // Кнопка импорта CSV без значка (только текст)
         var importBtn = Ext.create('Ext.button.Button', {
             cls: 'import-csv-btn',
-            iconCls: 'fa fa-file-excel-o',
             text: 'Импорт CSV',
-            tooltip: 'Загрузить датчики из CSV-файла (колонки: АОГ, Видео, Табло, Голос, ТФ, BLE, ТХГ, ДУТ, Датчик t)',
             handler: function() {
                 me.importCsv();
             }
@@ -248,6 +235,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         return grid;
     },
 
+    // Импорт CSV
     importCsv: function() {
         var me = this;
         var input = document.createElement('input');
@@ -270,12 +258,9 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         var lines = csvContent.split(/\r?\n/);
         if (lines.length === 0) return;
-        
-        // Разбираем заголовки (первая строка)
         var headers = lines[0].split(',').map(function(h) { return h.trim(); });
-        
-        // Ожидаемые колонки в CSV (русские названия)
-        var expectedCols = ['АОГ', 'Видео', 'Табло', 'Голос', 'ТФ', 'BLE', 'ТХГ', 'ДУТ', 'Датчик t'];
+        // Ожидаемые колонки: гос.номер, АОГ, Видео, Табло, Голос, ТФ, BLE, ТХГ, ДУТ, Датчик t
+        var expectedCols = ['гос.номер', 'АОГ', 'Видео', 'Табло', 'Голос', 'ТФ', 'BLE', 'ТХГ', 'ДУТ', 'Датчик t'];
         var colMap = {};
         for (var i = 0; i < expectedCols.length; i++) {
             var expected = expectedCols[i];
@@ -286,47 +271,16 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             colMap[expected] = idx;
         }
-        // Колонка с гос.номером – ищем по разным вариантам
-        var plateColIdx = -1;
-        var plateVariants = ['гос.номер', 'гос номер', 'gos_number', 'plate', 'номер'];
-        for (var v = 0; v < plateVariants.length; v++) {
-            var idxPlate = headers.indexOf(plateVariants[v]);
-            if (idxPlate !== -1) {
-                plateColIdx = idxPlate;
-                break;
-            }
-        }
-        if (plateColIdx === -1) {
-            Ext.Msg.alert('Ошибка', 'В CSV отсутствует колонка с гос. номером (ожидается "гос.номер" или "plate")');
-            return;
-        }
 
         var updated = 0;
         for (var rowIdx = 1; rowIdx < lines.length; rowIdx++) {
             var line = lines[rowIdx].trim();
             if (line === '') continue;
-            // Разбиваем строку на части, учитывая возможные кавычки (упрощённо)
-            var parts = [];
-            var inQuote = false;
-            var current = '';
-            for (var ch = 0; ch < line.length; ch++) {
-                var c = line[ch];
-                if (c === '"') {
-                    inQuote = !inQuote;
-                } else if (c === ',' && !inQuote) {
-                    parts.push(current.trim());
-                    current = '';
-                } else {
-                    current += c;
-                }
-            }
-            parts.push(current.trim());
-            if (parts.length < Math.max(plateColIdx, ...Object.values(colMap)) + 1) continue;
-            
-            var plate = parts[plateColIdx].replace(/^"|"$/g, '').trim();
+            var parts = line.split(',');
+            if (parts.length < expectedCols.length) continue;
+            var plate = parts[colMap['гос.номер']].trim();
             if (plate === '') continue;
-            
-            // Найти ТС по гос.номеру
+            // Найти ТС по гос.номеру в fullStore
             var foundRecord = null;
             me.vehicleFullStore.each(function(rec) {
                 var recPlate = rec.get('plate');
@@ -343,18 +297,16 @@ Ext.define('Store.sensor_dashboard.Module', {
             var storageKey = 'sensor_dashboard_' + vehid;
             var saved = localStorage.getItem(storageKey);
             var values = saved ? JSON.parse(saved) : {};
-            
+
             // Обновляем датчики по колонкам
-            for (var colName in colMap) {
-                var colIdx = colMap[colName];
-                var rawValue = parts[colIdx].replace(/^"|"$/g, '').trim().toLowerCase();
-                var isYes = (rawValue === 'да' || rawValue === 'yes' || rawValue === '1' || rawValue === 'true');
-                // Найти имя датчика по русской колонке
-                var sensor = me.sensors.find(function(s) { return s.csvCol === colName; });
-                if (sensor) {
+            Ext.each(me.sensors, function(sensor) {
+                if (sensor.csvCol) {
+                    var csvVal = parts[colMap[sensor.csvCol]].trim().toLowerCase();
+                    var isYes = (csvVal === 'да' || csvVal === 'yes' || csvVal === '1' || csvVal === 'true');
                     values[sensor.name] = isYes ? 'yes' : 'no';
                 }
-            }
+            });
+
             localStorage.setItem(storageKey, JSON.stringify(values));
             updated++;
             me.updateVehicleIcons(vehid);
