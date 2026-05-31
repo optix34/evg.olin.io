@@ -1,9 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель: поиск по ТС + фильтр по датчику.
+ * Левая панель: поиск по ТС + фильтр по датчику (ComboBox) + фильтр по клику на таблицу статистики.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Чекбоксы отображаются с подписью сверху («точно под своим названием»).
- * Таблица статистики: клик по строке датчика применяет фильтр по этому датчику.
+ * Каждый чекбокс: название датчика сверху, чекбокс под ним (labelAlign: 'top').
  * Диаграмма растягивается на всю ширину, без кнопок экспорта.
  */
 Ext.define('Store.sensor_dashboard.Module', {
@@ -25,6 +24,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
+        // Левая панель – обычная панель (без выдвижного меню)
         var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
@@ -42,6 +42,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.mainPanel = mainPanel;
         me.navTab = navTab;
 
+        // Наблюдение за изменением размера для перерисовки диаграммы
         me.resizeObserver = new ResizeObserver(function() {
             if (me.chart) {
                 me.chart.reflow();
@@ -70,24 +71,25 @@ Ext.define('Store.sensor_dashboard.Module', {
                 background: transparent;
                 display: flex;
                 flex-wrap: wrap;
+                justify-content: flex-start;
+                align-items: flex-start;
                 gap: 20px;
             }
             .sensor-checkbox-item {
-                display: inline-flex;
+                display: flex;
                 flex-direction: column;
                 align-items: center;
-                min-width: 70px;
                 text-align: center;
+                min-width: 80px;
+                margin: 0;
             }
-            .x-form-cb-label {
-                color: #000000 !important;
-                font-weight: normal !important;
-                margin-top: 5px !important;
+            .sensor-checkbox-item .x-form-cb-label {
+                margin: 0 0 5px 0;
+                font-weight: bold;
+                color: #000000;
             }
-            .x-form-checkbox {
-                opacity: 1 !important;
-                transform: scale(1.1);
-                margin: 0 auto;
+            .sensor-checkbox-item .x-form-checkbox {
+                margin: 0;
             }
             .dashboard-panel {
                 margin: 15px 10px;
@@ -324,10 +326,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 pack: 'start',
                 wrap: true
             },
-            cls: 'sensors-hbox-container',
-            defaults: {
-                margin: '0 15 0 0'
-            }
+            cls: 'sensors-hbox-container'
         });
 
         var sensorsPanel = Ext.create('Ext.panel.Panel', {
@@ -425,19 +424,20 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         Ext.each(me.sensors, function (sensor) {
             var checked = (values[sensor.name] === 'yes');
-            // Чекбокс с подписью сверху
             var checkbox = Ext.create('Ext.form.field.Checkbox', {
                 fieldLabel: sensor.label,
-                labelAlign: 'top',          // подпись сверху – «точно под своим названием»
+                labelAlign: 'top',          // Название сверху
                 itemId: sensor.name,
                 checked: checked,
                 disabled: false,
                 labelCls: 'x-form-cb-label',
-                margin: '0 10 0 0'
+                inputCls: 'x-form-checkbox',
+                style: { margin: '0 8px' }   // Отступы между блоками
             });
             var wrapper = Ext.create('Ext.container.Container', {
                 cls: 'sensor-checkbox-item',
-                items: [checkbox]
+                items: [checkbox],
+                margin: 0
             });
             container.add(wrapper);
         });
