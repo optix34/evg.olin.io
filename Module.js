@@ -1,9 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками.
- * Правая панель: таблица датчиков как Ext.grid.Panel с контекстным меню в заголовках.
- * Контекстное меню создаётся через Ext.menu.Menu.
- * Отключена accessibility в Highcharts.
+ * Правая панель: таблица датчиков через widgetcolumn с чекбоксами (без cell editing).
+ * Чекбоксы статичны, не меняют положение при клике, изменения сохраняются через кнопку «Применить».
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -93,7 +92,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 width: 100%;
                 height: 100%;
             }
-            /* Иконки в колонке Датчики */
             .sensor-icons i {
                 margin: 0 2px;
                 font-size: 14px;
@@ -110,7 +108,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         return origin + '/' + endpoint;
     },
 
-    // Получить HTML иконок для ТС
     getSensorIconsHtml: function(vehid) {
         var me = this;
         var storageKey = 'sensor_dashboard_' + vehid;
@@ -250,7 +247,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
             if (!sensorOk) return;
 
-            // Обновляем иконки (актуальные)
             var iconsHtml = me.getSensorIconsHtml(vehid);
             filtered.push(Ext.create('Ext.data.Model', {
                 vehid: vehid,
@@ -312,11 +308,13 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
+        // Хранилище для одной строки (текущее ТС)
         var sensorsStore = Ext.create('Ext.data.Store', {
             fields: me.sensors.map(function(s) { return s.name; }),
             data: [{}]
         });
 
+        // Создание меню для заголовков
         function createMenuForSensor(sensor) {
             return Ext.create('Ext.menu.Menu', {
                 items: [
@@ -341,6 +339,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             });
         }
 
+        // Колонки с чекбоксами через widgetcolumn (статичные, без смещения)
         var columns = [];
         Ext.each(me.sensors, function(sensor) {
             columns.push({
@@ -348,11 +347,23 @@ Ext.define('Store.sensor_dashboard.Module', {
                 dataIndex: sensor.name,
                 flex: 1,
                 menu: createMenuForSensor(sensor),
-                renderer: function(value) {
-                    var checked = (value === 'yes');
-                    return '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="pointer-events:none;">';
+                xtype: 'widgetcolumn',
+                widget: {
+                    xtype: 'checkbox',
+                    // При изменении чекбокса обновляем запись
+                    listeners: {
+                        change: function(checkbox, newValue) {
+                            var record = checkbox.getWidgetRecord();
+                            var field = checkbox.getWidgetColumn().dataIndex;
+                            var value = newValue ? 'yes' : 'no';
+                            record.set(field, value);
+                        }
+                    }
                 },
-                field: { xtype: 'checkboxfield' }
+                renderer: function(value) {
+                    // Рендер не используется, так как виджет сам отображает чекбокс
+                    return null;
+                }
             });
         });
 
@@ -362,14 +373,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             columns: columns,
             height: 80,
             viewConfig: { stripeRows: false, enableTextSelection: false },
-            selType: 'cellmodel',
-            plugins: [Ext.create('Ext.grid.plugin.CellEditing', { clicksToEdit: 1 })],
+            // Убираем cell editing, так как виджет сам обрабатывает изменение
             listeners: {
-                edit: function(editor, context) {
-                    var newValue = context.value ? 'yes' : 'no';
-                    var record = context.record;
-                    record.set(context.field, newValue);
-                }
+                // Ничего специального не нужно
             }
         });
 
@@ -496,7 +502,7 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         // Обновить иконки в левом списке
         me.updateVehicleIcons(me.currentVehid);
-        me.applyVehicleFilters(); // переприменить фильтры (для обновления списка)
+        me.applyVehicleFilters();
     },
 
     refreshDashboard: function () {
