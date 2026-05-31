@@ -2,8 +2,8 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы для выбранного ТС и дашборд.
- * Чекбоксы и названия всегда чёрные, чёткие (без прозрачности), как в активном режиме.
- * Для неактивных чекбоксов только иконка замка.
+ * Чекбоксы и названия – чёрные, жирные, с высокой контрастностью.
+ * Неактивные чекбоксы отличаются только иконкой замка.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -48,17 +48,18 @@ Ext.define('Store.sensor_dashboard.Module', {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
+            /* Общие стили для контейнеров */
             .sensor-checkbox-item {
                 display: inline-block;
                 margin: 5px 15px 5px 0;
                 white-space: nowrap;
             }
-            /* Замок для неактивных полей */
             .sensor-checkbox-item.locked .x-form-cb-label:after {
                 content: " 🔒";
                 font-size: 11px;
-                opacity: 0.8;
+                opacity: 0.9;
                 margin-left: 4px;
+                font-weight: normal;
             }
             .sensors-hbox-container {
                 background: #ffffff;
@@ -74,20 +75,56 @@ Ext.define('Store.sensor_dashboard.Module', {
             .dashboard-grid .x-grid-header {
                 background: #f5f5f5;
             }
-            /* Все чекбоксы и их подписи – чёрные, чёткие, без прозрачности */
+
+            /* ===== ГЛАВНОЕ: ЧЁТКИЕ, КОНТРАСТНЫЕ ЧЕКБОКСЫ И ТЕКСТ ===== */
+            /* Подписи чекбоксов – жирный чёрный текст */
             .x-form-cb-label {
                 color: #000000 !important;
-                font-weight: normal !important;
+                font-weight: 700 !important;
+                font-size: 13px !important;
                 opacity: 1 !important;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
             }
+            /* Сам чекбокс – увеличенный, с чёрной рамкой, белым фоном */
             .x-form-checkbox {
+                width: 18px !important;
+                height: 18px !important;
+                border: 2px solid #000000 !important;
+                background: #ffffff !important;
+                border-radius: 3px !important;
+                margin-right: 6px !important;
                 opacity: 1 !important;
+                cursor: pointer;
             }
-            /* Неактивные чекбоксы – такой же чёткий вид, но с возможностью отличить через замок */
+            /* Отмеченное состояние – чёрный фон и белая галочка */
+            .x-form-checkbox:checked {
+                background: #000000 !important;
+                position: relative;
+            }
+            .x-form-checkbox:checked::after {
+                content: "✓";
+                color: #ffffff !important;
+                font-size: 14px;
+                font-weight: bold;
+                position: absolute;
+                left: 2px;
+                top: -2px;
+            }
+            /* Неактивные чекбоксы – без изменения цвета, только замок */
             .x-form-checkbox:disabled {
                 opacity: 1 !important;
-                background-color: transparent !important;
+                background: #ffffff !important;
+                border-color: #000000 !important;
+                cursor: default;
             }
+            .x-form-checkbox:disabled:checked {
+                background: #000000 !important;
+            }
+            .x-form-checkbox:disabled:checked::after {
+                content: "✓";
+                color: #ffffff !important;
+            }
+            /* Подписи неактивных – без прозрачности, чёрные */
             .x-form-field:disabled + .x-form-cb-label {
                 opacity: 1 !important;
                 color: #000000 !important;
