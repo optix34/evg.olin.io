@@ -1,8 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель: плоский список ТС с поиском и фильтром по датчикам.
+ * Левая панель: плоский список ТС с полем поиска и выпадающим фильтром по датчику.
  * Правая панель: чекбоксы для выбранного ТС и дашборд статистики.
- * Стили соответствуют документации PILOT.
+ * Фильтр по датчику отображает ТС, у которых в сохранённых настройках данный датчик включён.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -89,9 +89,9 @@ Ext.define('Store.sensor_dashboard.Module', {
                 opacity: 1 !important;
                 color: #000000 !important;
             }
-            .vehicle-search-field, .vehicle-filter-field {
+            .vehicle-search-field, .vehicle-filter-combo {
                 margin: 5px;
-                width: 100%;
+                width: calc(100% - 10px);
             }
         `;
         document.head.appendChild(styleEl);
@@ -104,111 +104,136 @@ Ext.define('Store.sensor_dashboard.Module', {
         return origin + '/' + endpoint;
     },
 
-    // Создание плоского списка ТС с поиском и фильтром по датчикам
+    // Создание плоского списка ТС с поиском и фильтром по датчику
     createVehicleList: function () {
         var me = this;
         var apiUrl = me.getApiUrl('ax/tree.php');
 
-        // Хранилище для всех ТС (оригинальные данные)
-        me.allVehicles = [];
-
-        // Загружаем все ТС один раз
-        Ext.Ajax.request({
-            url: apiUrl,
-            params: { vehs: 1, state: 1 },
-            success: function(response) {
-                var data = Ext.decode(response.responseText);
-                var vehicles = [];
-                function traverse(nodes) {
-                    Ext.each(nodes, function(node) {
-                        if (node.vehid) {
-                            vehicles.push({
-                                vehid: node.vehid,
-                                name: node.name
+        // Стор для всех ТС (без фильтрации)
+        var fullStore = Ext.create('Ext.data.Store', {
+            fields: ['vehid', 'name'],
+            proxy: {
+                type: 'ajax',
+                url: apiUrl,
+                extraParams: { vehs: 1, state: 1 },
+                reader: {
+                    type: 'json',
+                    rootProperty: 'children',
+                    transform: function(data) {
+                        var vehicles = [];
+                        function traverse(nodes) {
+                            Ext.each(nodes, function(node) {
+                                if (node.vehid) {
+                                    vehicles.push({
+                                        vehid: node.vehid,
+                                        name: node.name
+                                    });
+                                }
+                                if (node.children && node.children.length) {
+                                    traverse(node.children);
+                                }
                             });
                         }
-                        if (node.children && node.children.length) {
-                            traverse(node.children);
-                        }
-                    });
-                }
-                traverse(data);
-                me.allVehicles = vehicles;
-                // Загружаем store после получения данных
-                if (me.vehicleStore) {
-                    me.applyFilters();
+                        traverse(data);
+                        return vehicles;
+                    }
                 }
             },
-            scope: me
+            autoLoad: true
         });
 
-        me.vehicleStore = Ext.create('Ext.data.Store', {
+        // Стор для отображения с фильтрацией
+        var displayStore = Ext.create('Ext.data.Store', {
             fields: ['vehid', 'name'],
             data: []
         });
 
-        // Поле поиска по названию
+        // Функция обновления отображаемого стора (фильтр по тексту + по датчику)
+        var updateFilter = function() {
+            var searchValue = searchField.getValue();
+            var selectedSensor = sensorFilter.getValue();
+            var allRecords = [];
+            fullStore.each(function(rec) {
+                allRecords.push(rec);
+            });
+
+            var filtered = Ext.Array.filter(allRecords, function(record) {
+                var vehid = record.get('vehid');
+                // Текстовый фильтр по названию
+                if (searchValue) {
+                    var name = record.get('name');
+                    if (name.toLowerCase().indexOf(searchValue.toLowerCase()) === -1) {
+                        return false;
+                    }
+                }
+                // Фильтр по датчику
+                if (selectedSensor && selectedSensor !== 'all') {
+                    var storageKey = 'sensor_dashboard_' + vehid;
+                    var saved = localStorage.getItem(storageKey);
+                    var values = saved ? JSON.parse(saved) : {};
+                    if (values[selectedSensor] !== 'yes') {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            displayStore.loadData(filtered);
+        };
+
+        // Поле текстового поиска
         var searchField = Ext.create('Ext.form.field.Text', {
             cls: 'vehicle-search-field',
-            emptyText: 'Поиск ТС...',
+            emptyText: 'Поиск по названию...',
             enableKeyEvents: true,
             triggers: {
                 clear: {
                     cls: 'x-form-clear-trigger',
                     handler: function() {
                         searchField.reset();
-                        me.searchText = '';
-                        me.applyFilters();
+                        updateFilter();
                     }
                 }
             },
             listeners: {
-                keyup: function(field) {
-                    me.searchText = field.getValue();
-                    me.applyFilters();
+                keyup: function() {
+                    updateFilter();
                 }
             }
         });
 
-        // Выпадающий список с датчиками
-        var filterCombo = Ext.create('Ext.form.field.ComboBox', {
-            cls: 'vehicle-filter-field',
-            emptyText: 'Фильтр по датчику...',
+        // Выпадающий список для фильтра по датчику
+        var comboItems = [{ value: 'all', text: 'Все датчики' }];
+        Ext.each(me.sensors, function(s) {
+            comboItems.push({ value: s.name, text: s.label });
+        });
+        var sensorFilter = Ext.create('Ext.form.field.ComboBox', {
+            cls: 'vehicle-filter-combo',
+            emptyText: 'Фильтр по датчику',
+            store: Ext.create('Ext.data.Store', {
+                fields: ['value', 'text'],
+                data: comboItems
+            }),
             queryMode: 'local',
-            displayField: 'label',
-            valueField: 'name',
-            store: {
-                fields: ['name', 'label'],
-                data: [
-                    { name: '', label: 'Все датчики' },
-                    { name: 'aog', label: 'АОГ' },
-                    { name: 'video', label: 'Видео' },
-                    { name: 'tablo', label: 'Табло' },
-                    { name: 'voice', label: 'Голос' },
-                    { name: 'tf', label: 'ТФ' },
-                    { name: 'kpp', label: 'КПП' },
-                    { name: 'thg', label: 'ТХГ' },
-                    { name: 'dut', label: 'ДУТ' },
-                    { name: 'temp_sensor', label: 'Датчик t' }
-                ]
-            },
-            value: '',
+            displayField: 'text',
+            valueField: 'value',
+            value: 'all',
+            editable: false,
             listeners: {
-                change: function(combo, newValue) {
-                    me.selectedSensor = newValue;
-                    me.applyFilters();
+                select: function() {
+                    updateFilter();
                 }
             }
         });
 
         var grid = Ext.create('Ext.grid.Panel', {
-            store: me.vehicleStore,
+            store: displayStore,
             columns: [{
                 text: 'ТС',
                 dataIndex: 'name',
                 flex: 1
             }],
-            tbar: [searchField, filterCombo],
+            tbar: [searchField, sensorFilter],
             listeners: {
                 selectionchange: function (selModel, selected) {
                     if (selected && selected.length) {
@@ -223,41 +248,16 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
         });
 
-        me.grid = grid;
+        // После загрузки полного стора – обновить фильтр
+        fullStore.on('load', function() {
+            updateFilter();
+        });
+
+        me.vehicleDisplayStore = displayStore;
+        me.vehicleFullStore = fullStore;
+        me.updateVehicleFilter = updateFilter;
+
         return grid;
-    },
-
-    // Применение фильтров (поиск + датчик)
-    applyFilters: function() {
-        var me = this;
-        if (!me.allVehicles.length) return;
-
-        var filtered = Ext.Array.clone(me.allVehicles);
-        var searchText = me.searchText || '';
-        var selectedSensor = me.selectedSensor || '';
-
-        // Фильтр по поиску
-        if (searchText) {
-            filtered = Ext.Array.filter(filtered, function(vehicle) {
-                return vehicle.name && vehicle.name.toLowerCase().indexOf(searchText.toLowerCase()) !== -1;
-            });
-        }
-
-        // Фильтр по датчику
-        if (selectedSensor && selectedSensor !== '') {
-            filtered = Ext.Array.filter(filtered, function(vehicle) {
-                var storageKey = 'sensor_dashboard_' + vehicle.vehid;
-                var saved = localStorage.getItem(storageKey);
-                var values = saved ? JSON.parse(saved) : {};
-                return values[selectedSensor] === 'yes';
-            });
-        }
-
-        me.vehicleStore.loadData(filtered);
-        if (me.vehicleStore.getCount() > 0) {
-            // Сбрасываем выделение, чтобы не было конфликтов
-            me.grid.getSelectionModel().deselectAll();
-        }
     },
 
     createMainPanel: function () {
@@ -414,9 +414,10 @@ Ext.define('Store.sensor_dashboard.Module', {
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
         localStorage.setItem(storageKey, JSON.stringify(values));
 
-        // После сохранения обновляем фильтр (чтобы список ТС актуализировался)
-        me.applyFilters();
-        me.refreshDashboard();
+        // После сохранения – обновляем фильтр в списке ТС (если он активен по датчику)
+        if (me.updateVehicleFilter) {
+            me.updateVehicleFilter();
+        }
 
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
     },
@@ -426,14 +427,19 @@ Ext.define('Store.sensor_dashboard.Module', {
         var store = me.mainPanel.dashboardStore;
         if (!store) return;
 
-        var allVehicles = me.allVehicles || [];
+        var allVehicles = [];
+        if (me.vehicleFullStore) {
+            me.vehicleFullStore.each(function(record) {
+                allVehicles.push(record.get('vehid'));
+            });
+        }
         var totalVehicleCount = allVehicles.length;
 
         var totals = {};
         Ext.each(me.sensors, function(s) { totals[s.name] = 0; });
 
-        Ext.each(allVehicles, function(vehicle) {
-            var storageKey = 'sensor_dashboard_' + vehicle.vehid;
+        Ext.each(allVehicles, function(vehid) {
+            var storageKey = 'sensor_dashboard_' + vehid;
             var saved = localStorage.getItem(storageKey);
             var values = saved ? JSON.parse(saved) : {};
             Ext.each(me.sensors, function(s) {
