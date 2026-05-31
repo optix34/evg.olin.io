@@ -2,7 +2,7 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику (ComboBox) + фильтр по клику на таблицу статистики.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Чекбоксы расположены в 2 ряда (по 4-5 элементов в строке) на всю ширину окна, с отступом от названия.
+ * Чекбоксы расположены с помощью CSS Grid на всю ширину правого окна (равномерное заполнение).
  * Диаграмма растягивается на всю ширину, без кнопок экспорта.
  */
 Ext.define('Store.sensor_dashboard.Module', {
@@ -69,20 +69,16 @@ Ext.define('Store.sensor_dashboard.Module', {
             .sensors-hbox-container {
                 padding: 12px 15px;
                 background: transparent;
-                display: flex !important;
-                flex-wrap: wrap !important;
-                justify-content: flex-start !important;
-                align-items: flex-start !important;
-                gap: 20px 30px !important;
+                display: grid !important;
+                grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+                gap: 12px 20px !important;
             }
             .sensor-checkbox-item {
-                flex: 0 1 160px !important;
-                min-width: 120px !important;
-                margin: 0 !important;
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
                 text-align: center !important;
+                margin: 0 !important;
             }
             .sensor-checkbox-item .x-form-cb-label {
                 margin: 0 0 8px 0 !important;
@@ -428,7 +424,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             var checked = (values[sensor.name] === 'yes');
             var checkbox = Ext.create('Ext.form.field.Checkbox', {
                 fieldLabel: sensor.label,
-                labelAlign: 'top',          // Название сверху
+                labelAlign: 'top',
                 itemId: sensor.name,
                 checked: checked,
                 disabled: false,
