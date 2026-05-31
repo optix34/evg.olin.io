@@ -2,9 +2,7 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Под таблицей статистики – увеличенная столбчатая диаграмма Highcharts.
- * Каждый столбец (датчик) имеет свой цвет, диаграмма растягивается на всю ширину.
- * Добавлен вертикальный скроллинг, датчик КПП переименован в BLE.
+ * Диаграмма растягивается на всю ширину правого окна и адаптируется к изменению размера.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -15,7 +13,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         { name: 'tablo', label: 'Табло' },
         { name: 'voice', label: 'Голос' },
         { name: 'tf', label: 'ТФ' },
-        { name: 'kpp', label: 'BLE' },        // переименовано
+        { name: 'kpp', label: 'BLE' },
         { name: 'thg', label: 'ТХГ' },
         { name: 'dut', label: 'ДУТ' },
         { name: 'temp_sensor', label: 'Датчик t' }
@@ -42,25 +40,17 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.mainPanel = mainPanel;
         me.navTab = navTab;
 
-        me.refreshDashboard();
-
-        // Слушатель изменения размера окна для перерисовки графика
-        me.resizeHandler = function() {
-            if (me.chart && me.chart.reflow) {
+        // Слушаем изменение размера панели для перерисовки диаграммы
+        me.resizeObserver = new ResizeObserver(function() {
+            if (me.chart) {
                 me.chart.reflow();
             }
-        };
-        Ext.on(window, 'resize', me.resizeHandler);
-    },
+        });
+        if (mainPanel.body) {
+            me.resizeObserver.observe(mainPanel.body.dom);
+        }
 
-    onDestroy: function() {
-        if (this.resizeHandler) {
-            Ext.un(window, 'resize', this.resizeHandler);
-        }
-        if (this.chart) {
-            this.chart.destroy();
-        }
-        this.callParent();
+        me.refreshDashboard();
     },
 
     addCustomStyles: function () {
@@ -108,9 +98,9 @@ Ext.define('Store.sensor_dashboard.Module', {
                 background: #ffffff;
                 border: 1px solid #e0e4e8;
                 border-radius: 4px;
-                padding: 10px;
-                width: auto;
+                padding: 5px;
                 height: 450px;
+                width: auto;
             }
             #sensorChart {
                 width: 100%;
@@ -521,7 +511,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 type: 'column',
                 backgroundColor: 'transparent',
                 style: { fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif' },
-                width: '100%'   // явно задаём ширину на 100%
+                width: null   // позволит растягиваться на 100% контейнера
             },
             title: {
                 text: 'Количество ТС с включённым датчиком',
