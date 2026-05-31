@@ -2,7 +2,7 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику (ComboBox).
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Чекбоксы равномерно распределены по всей ширине контейнера, занимают доступное пространство.
+ * Чекбоксы распределены сеткой (CSS Grid) – корректно переносятся и занимают всю ширину.
  * Клик по строке таблицы статистики фильтрует ТС по датчику.
  */
 Ext.define('Store.sensor_dashboard.Module', {
@@ -63,22 +63,20 @@ Ext.define('Store.sensor_dashboard.Module', {
                 overflow: hidden;
             }
             .sensors-hbox-container {
-                display: flex !important;
-                flex-wrap: wrap;
+                display: grid !important;
+                grid-template-columns: repeat(auto-fill, minmax(130px, auto));
+                gap: 8px 12px;
                 padding: 12px 15px;
                 background: transparent;
             }
             .sensor-checkbox-item {
-                flex: 1 1 auto;           /* растягивается, занимает доступное место */
-                min-width: 110px;          /* минимальная ширина, чтобы не слипалось */
-                margin: 5px 5px 5px 0;
-                white-space: nowrap;
                 display: flex;
                 align-items: center;
+                white-space: nowrap;
+                margin: 0;
             }
             .sensor-checkbox-item .x-form-cb-label {
                 margin-left: 5px;
-                white-space: nowrap;
             }
             .x-form-cb-label {
                 color: #000000 !important;
@@ -299,7 +297,6 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
-            layout: 'hbox',
             cls: 'sensors-hbox-container'
         });
 
@@ -408,7 +405,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             var wrapper = Ext.create('Ext.container.Container', {
                 cls: 'sensor-checkbox-item',
                 items: [checkbox],
-                margin: '0 8 0 0'
+                margin: 0
             });
             container.add(wrapper);
         });
