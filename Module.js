@@ -2,8 +2,7 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Под таблицей статистики – столбчатая диаграмма (Highcharts) с уменьшенной высотой.
- * Каждый датчик отображается своим цветом.
+ * Под таблицей статистики – уменьшенная столбчатая диаграмма (Highcharts) с разными цветами для каждого датчика.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -20,10 +19,10 @@ Ext.define('Store.sensor_dashboard.Module', {
         { name: 'temp_sensor', label: 'Датчик t' }
     ],
 
-    // Цвета для каждого датчика (индекс соответствует порядку в sensors)
+    // Цветовая палитра для датчиков
     chartColors: [
-        '#2c7bb6', '#00a9a8', '#e67e22', '#9b59b6', '#f1c40f',
-        '#e74c3c', '#1abc9c', '#3498db', '#95a5a6'
+        '#2c7bb6', '#abd9e9', '#ffffbf', '#fdae61', '#d7191c',
+        '#1a9641', '#fd8d3c', '#f4c542', '#9467bd'
     ],
 
     initModule: function () {
@@ -95,7 +94,12 @@ Ext.define('Store.sensor_dashboard.Module', {
                 background: #ffffff;
                 border: 1px solid #e0e4e8;
                 border-radius: 4px;
-                padding: 10px;
+                padding: 8px;
+                height: 240px;
+            }
+            .chart-container .highcharts-container {
+                width: 100% !important;
+                height: 100% !important;
             }
         `;
         document.head.appendChild(styleEl);
@@ -292,6 +296,7 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
+        // Контейнер чекбоксов
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
             layout: { type: 'hbox', align: 'middle', pack: 'start', wrap: true },
@@ -304,6 +309,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             items: [fieldContainer]
         });
 
+        // Таблица статистики
         var dashboardStore = Ext.create('Ext.data.Store', {
             fields: ['sensor', 'totalVehicles', 'enabledCount', 'percentage'],
             data: []
@@ -333,10 +339,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoHeight: true
         });
 
-        // Контейнер для диаграммы с уменьшенной высотой
+        // Контейнер для диаграммы (уменьшен)
         var chartContainer = Ext.create('Ext.container.Container', {
             cls: 'chart-container',
-            height: 220,   // уменьшено
             itemId: 'chartContainer',
             html: '<div id="sensorChart" style="width:100%; height:100%;"></div>'
         });
@@ -354,9 +359,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             tbar: tbar,
             items: [
                 sensorsPanel,
-                { xtype: 'component', height: 10 },
+                { xtype: 'component', height: 8 },
                 dashboardPanel,
-                { xtype: 'component', height: 10 },
+                { xtype: 'component', height: 8 },
                 chartContainer
             ]
         });
@@ -468,6 +473,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
         store.loadData(data);
 
+        // Отрисовка диаграммы с индивидуальными цветами
         me.renderChart(categories, seriesData, totalVehicleCount);
     },
 
@@ -492,28 +498,31 @@ Ext.define('Store.sensor_dashboard.Module', {
             me.chart.destroy();
         }
 
-        // Массив цветов для каждого столбца (по количеству датчиков)
-        var colors = me.chartColors.slice(0, categories.length);
+        // Формируем серию с индивидуальными цветами для каждого столбца
+        var columnData = [];
+        for (var i = 0; i < seriesData.length; i++) {
+            columnData.push({
+                y: seriesData[i],
+                color: me.chartColors[i % me.chartColors.length]
+            });
+        }
 
         me.chart = Highcharts.chart(el, {
-            chart: { type: 'column' },
-            title: { text: 'Количество ТС с включённым датчиком' },
-            subtitle: { text: 'Всего ТС: ' + totalVehicleCount },
-            xAxis: { categories: categories, title: { text: 'Датчики' } },
-            yAxis: { title: { text: 'Количество ТС' }, min: 0 },
-            tooltip: { headerFormat: '<b>{point.x}</b><br/>', pointFormat: '{point.y} из {point.total} ТС' },
-            plotOptions: {
-                column: {
-                    dataLabels: { enabled: true },
-                    colorByPoint: true,   // включает индивидуальные цвета для каждого столбца
-                    colors: colors        // задаём массив цветов
-                }
-            },
+            chart: { type: 'column', height: 210, width: null },
+            title: { text: 'Количество ТС с включённым датчиком', style: { fontSize: '12px' } },
+            subtitle: { text: 'Всего ТС: ' + totalVehicleCount, style: { fontSize: '11px' } },
+            xAxis: { categories: categories, labels: { rotation: -30, style: { fontSize: '10px' } } },
+            yAxis: { title: { text: 'ТС' }, min: 0, gridLineWidth: 0 },
+            tooltip: { pointFormat: '<b>{point.y}</b> из ' + totalVehicleCount + ' ТС' },
+            plotOptions: { column: { dataLabels: { enabled: true, format: '{y}', style: { fontSize: '10px' } } } },
             series: [{
                 name: 'Включено',
-                data: seriesData
+                data: columnData,
+                colorByPoint: false,
+                showInLegend: false
             }],
-            credits: { enabled: false }
+            credits: { enabled: false },
+            legend: { enabled: false }
         });
     },
 
