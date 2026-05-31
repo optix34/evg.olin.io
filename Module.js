@@ -1,8 +1,9 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками.
- * Правая панель: таблица датчиков через widgetcolumn с чекбоксами (без cell editing).
- * Чекбоксы статичны, не меняют положение при клике, изменения сохраняются через кнопку «Применить».
+ * Правая панель: таблица датчиков через widgetcolumn с чекбоксами (checkboxfield).
+ * Чекбоксы статичны, правильно отображают состояние (галочка/нет).
+ * Изменения сохраняются через кнопку «Применить».
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -308,13 +309,12 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        // Хранилище для одной строки (текущее ТС)
+        // Хранилище для одной строки (текущее ТС) – значения boolean
         var sensorsStore = Ext.create('Ext.data.Store', {
             fields: me.sensors.map(function(s) { return s.name; }),
             data: [{}]
         });
 
-        // Создание меню для заголовков
         function createMenuForSensor(sensor) {
             return Ext.create('Ext.menu.Menu', {
                 items: [
@@ -339,7 +339,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             });
         }
 
-        // Колонки с чекбоксами через widgetcolumn (статичные, без смещения)
         var columns = [];
         Ext.each(me.sensors, function(sensor) {
             columns.push({
@@ -349,20 +348,18 @@ Ext.define('Store.sensor_dashboard.Module', {
                 menu: createMenuForSensor(sensor),
                 xtype: 'widgetcolumn',
                 widget: {
-                    xtype: 'checkbox',
-                    // При изменении чекбокса обновляем запись
+                    xtype: 'checkboxfield',
+                    // Привязка к значению поля записи (автоматически через setValue)
+                    // Устанавливаем параметры для правильного преобразования boolean
+                    inputValue: true,
+                    uncheckedValue: false,
                     listeners: {
-                        change: function(checkbox, newValue) {
-                            var record = checkbox.getWidgetRecord();
-                            var field = checkbox.getWidgetColumn().dataIndex;
-                            var value = newValue ? 'yes' : 'no';
-                            record.set(field, value);
+                        change: function(cb, newValue) {
+                            var record = cb.getWidgetRecord();
+                            var field = cb.getWidgetColumn().dataIndex;
+                            record.set(field, newValue);
                         }
                     }
-                },
-                renderer: function(value) {
-                    // Рендер не используется, так как виджет сам отображает чекбокс
-                    return null;
                 }
             });
         });
@@ -372,11 +369,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             store: sensorsStore,
             columns: columns,
             height: 80,
-            viewConfig: { stripeRows: false, enableTextSelection: false },
-            // Убираем cell editing, так как виджет сам обрабатывает изменение
-            listeners: {
-                // Ничего специального не нужно
-            }
+            viewConfig: { stripeRows: false, enableTextSelection: false }
         });
 
         var dashboardStore = Ext.create('Ext.data.Store', {
@@ -460,7 +453,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         if (!me.currentVehid) return;
         var record = me.mainPanel.sensorsStore.getAt(0);
         if (record) {
-            record.set(sensorName, value ? 'yes' : 'no');
+            record.set(sensorName, value); // value boolean
         }
     },
 
@@ -475,7 +468,8 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var recordData = {};
         Ext.each(me.sensors, function(sensor) {
-            recordData[sensor.name] = (values[sensor.name] === 'yes') ? 'yes' : 'no';
+            // Преобразуем 'yes'/'no' в boolean
+            recordData[sensor.name] = (values[sensor.name] === 'yes');
         });
         me.mainPanel.sensorsStore.loadData([recordData]);
 
@@ -493,14 +487,14 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var values = {};
         Ext.each(me.sensors, function(sensor) {
-            values[sensor.name] = record.get(sensor.name) === 'yes' ? 'yes' : 'no';
+            // Преобразуем boolean в 'yes'/'no'
+            values[sensor.name] = record.get(sensor.name) ? 'yes' : 'no';
         });
 
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
         localStorage.setItem(storageKey, JSON.stringify(values));
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
 
-        // Обновить иконки в левом списке
         me.updateVehicleIcons(me.currentVehid);
         me.applyVehicleFilters();
     },
