@@ -1,8 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель: поиск по ТС + фильтр по датчику.
+ * Левая панель (обычная, без выдвижного меню): поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Диаграмма растягивается на всю ширину правого окна и адаптируется к изменению размера.
+ * Диаграмма растягивается на всю ширину правого окна.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -23,11 +23,12 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        var navTab = Ext.create('Pilot.utils.LeftBarPanel', {
+        // Левая панель – обычная панель (без выдвижного меню)
+        var navTab = Ext.create('Ext.panel.Panel', {
             title: 'Доп. Оборудование',
             iconCls: 'fa fa-microchip',
-            iconAlign: 'top',
-            minimized: true,
+            width: 320,
+            layout: 'fit',
             items: [me.createVehicleList()]
         });
 
@@ -40,7 +41,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.mainPanel = mainPanel;
         me.navTab = navTab;
 
-        // Слушаем изменение размера панели для перерисовки диаграммы
+        // Наблюдение за изменением размера для перерисовки диаграммы
         me.resizeObserver = new ResizeObserver(function() {
             if (me.chart) {
                 me.chart.reflow();
@@ -511,7 +512,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 type: 'column',
                 backgroundColor: 'transparent',
                 style: { fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif' },
-                width: null   // позволит растягиваться на 100% контейнера
+                width: null
             },
             title: {
                 text: 'Количество ТС с включённым датчиком',
