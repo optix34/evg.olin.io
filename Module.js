@@ -2,7 +2,8 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
- * Под таблицей статистики – столбчатая диаграмма (Highcharts).
+ * Под таблицей статистики – столбчатая диаграмма (Highcharts) с уменьшенной высотой.
+ * Каждый датчик отображается своим цветом.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -17,6 +18,12 @@ Ext.define('Store.sensor_dashboard.Module', {
         { name: 'thg', label: 'ТХГ' },
         { name: 'dut', label: 'ДУТ' },
         { name: 'temp_sensor', label: 'Датчик t' }
+    ],
+
+    // Цвета для каждого датчика (индекс соответствует порядку в sensors)
+    chartColors: [
+        '#2c7bb6', '#00a9a8', '#e67e22', '#9b59b6', '#f1c40f',
+        '#e74c3c', '#1abc9c', '#3498db', '#95a5a6'
     ],
 
     initModule: function () {
@@ -285,7 +292,6 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        // Контейнер чекбоксов
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
             layout: { type: 'hbox', align: 'middle', pack: 'start', wrap: true },
@@ -298,7 +304,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             items: [fieldContainer]
         });
 
-        // Таблица статистики
         var dashboardStore = Ext.create('Ext.data.Store', {
             fields: ['sensor', 'totalVehicles', 'enabledCount', 'percentage'],
             data: []
@@ -328,10 +333,10 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoHeight: true
         });
 
-        // Контейнер для диаграммы
+        // Контейнер для диаграммы с уменьшенной высотой
         var chartContainer = Ext.create('Ext.container.Container', {
             cls: 'chart-container',
-            height: 300,
+            height: 220,   // уменьшено
             itemId: 'chartContainer',
             html: '<div id="sensorChart" style="width:100%; height:100%;"></div>'
         });
@@ -449,7 +454,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var data = [];
         var categories = [];
         var seriesData = [];
-        Ext.each(me.sensors, function(sensor) {
+        Ext.each(me.sensors, function(sensor, idx) {
             var enabled = totals[sensor.name];
             var percent = totalVehicleCount ? Math.round((enabled / totalVehicleCount) * 100) : 0;
             data.push({
@@ -463,7 +468,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
         store.loadData(data);
 
-        // Отрисовка диаграммы
         me.renderChart(categories, seriesData, totalVehicleCount);
     },
 
@@ -472,25 +476,24 @@ Ext.define('Store.sensor_dashboard.Module', {
         var container = me.mainPanel.chartContainer;
         if (!container) return;
 
-        // Убедимся, что DOM-элемент существует
         var el = document.getElementById('sensorChart');
         if (!el) {
-            // Создаём, если ещё нет
             container.update('<div id="sensorChart" style="width:100%; height:100%;"></div>');
             el = document.getElementById('sensorChart');
         }
         if (!el) return;
 
-        // Проверяем наличие Highcharts
         if (typeof Highcharts === 'undefined') {
             el.innerHTML = '<div style="padding:20px; text-align:center;">Highcharts не загружен</div>';
             return;
         }
 
-        // Если график уже существует, уничтожаем его
         if (me.chart) {
             me.chart.destroy();
         }
+
+        // Массив цветов для каждого столбца (по количеству датчиков)
+        var colors = me.chartColors.slice(0, categories.length);
 
         me.chart = Highcharts.chart(el, {
             chart: { type: 'column' },
@@ -499,11 +502,16 @@ Ext.define('Store.sensor_dashboard.Module', {
             xAxis: { categories: categories, title: { text: 'Датчики' } },
             yAxis: { title: { text: 'Количество ТС' }, min: 0 },
             tooltip: { headerFormat: '<b>{point.x}</b><br/>', pointFormat: '{point.y} из {point.total} ТС' },
-            plotOptions: { column: { dataLabels: { enabled: true } } },
+            plotOptions: {
+                column: {
+                    dataLabels: { enabled: true },
+                    colorByPoint: true,   // включает индивидуальные цвета для каждого столбца
+                    colors: colors        // задаём массив цветов
+                }
+            },
             series: [{
                 name: 'Включено',
-                data: seriesData,
-                color: '#2c7bb6'
+                data: seriesData
             }],
             credits: { enabled: false }
         });
