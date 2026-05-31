@@ -1,8 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
- * Правая панель: чекбоксы всегда активны (редактирование постоянно доступно),
- * кнопка «Применить» сохраняет изменения.
+ * Правая панель: чекбоксы всегда активны, кнопка «Применить».
+ * Под таблицей статистики – столбчатая диаграмма (Highcharts).
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -47,7 +47,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
-            /* Блок чекбоксов – как панель статистики */
             .sensors-panel {
                 margin: 15px 10px 0 10px;
                 background: #ffffff;
@@ -59,13 +58,11 @@ Ext.define('Store.sensor_dashboard.Module', {
                 padding: 12px 15px;
                 background: transparent;
             }
-            /* Каждый чекбокс */
             .sensor-checkbox-item {
                 display: inline-block;
                 margin: 5px 15px 5px 0;
                 white-space: nowrap;
             }
-            /* Чекбоксы и текст – всегда чёрные, чёткие, активные */
             .x-form-cb-label {
                 color: #000000 !important;
                 font-weight: normal !important;
@@ -73,7 +70,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             .x-form-checkbox {
                 opacity: 1 !important;
             }
-            /* Панель статистики */
             .dashboard-panel {
                 margin: 15px 10px;
                 background: #ffffff;
@@ -83,10 +79,16 @@ Ext.define('Store.sensor_dashboard.Module', {
             .dashboard-grid .x-grid-header {
                 background: #f5f5f5;
             }
-            /* Поля поиска и фильтра */
             .vehicle-search-field, .sensor-filter-combo {
                 margin: 5px;
                 width: 180px;
+            }
+            .chart-container {
+                margin: 0 10px 15px 10px;
+                background: #ffffff;
+                border: 1px solid #e0e4e8;
+                border-radius: 4px;
+                padding: 10px;
             }
         `;
         document.head.appendChild(styleEl);
@@ -283,20 +285,20 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        // Контейнер чекбоксов (внутренний)
+        // Контейнер чекбоксов
         var fieldContainer = Ext.create('Ext.container.Container', {
             itemId: 'sensorsContainer',
             layout: { type: 'hbox', align: 'middle', pack: 'start', wrap: true },
             cls: 'sensors-hbox-container'
         });
 
-        // Внешняя панель, которая имитирует стиль таблицы статистики
         var sensorsPanel = Ext.create('Ext.panel.Panel', {
             cls: 'sensors-panel',
             layout: 'fit',
             items: [fieldContainer]
         });
 
+        // Таблица статистики
         var dashboardStore = Ext.create('Ext.data.Store', {
             fields: ['sensor', 'totalVehicles', 'enabledCount', 'percentage'],
             data: []
@@ -326,7 +328,14 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoHeight: true
         });
 
-        // Тулбар только с кнопкой «Применить» (без «Редактировать»)
+        // Контейнер для диаграммы
+        var chartContainer = Ext.create('Ext.container.Container', {
+            cls: 'chart-container',
+            height: 300,
+            itemId: 'chartContainer',
+            html: '<div id="sensorChart" style="width:100%; height:100%;"></div>'
+        });
+
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
             items: [
                 { xtype: 'label', itemId: 'vehicleNameLabel', text: 'ТС не выбрано', style: 'font-weight: bold; font-size: 13px;' },
@@ -341,7 +350,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             items: [
                 sensorsPanel,
                 { xtype: 'component', height: 10 },
-                dashboardPanel
+                dashboardPanel,
+                { xtype: 'component', height: 10 },
+                chartContainer
             ]
         });
 
@@ -349,6 +360,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         mainPanel.vehicleLabel = tbar.down('#vehicleNameLabel');
         mainPanel.dashboardStore = dashboardStore;
         mainPanel.dashboardGrid = dashboardGrid;
+        mainPanel.chartContainer = chartContainer;
 
         return mainPanel;
     },
@@ -367,13 +379,12 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         Ext.each(me.sensors, function (sensor) {
             var checked = (values[sensor.name] === 'yes');
-            // Чекбоксы всегда активны (disabled: false)
             var checkbox = Ext.create('Ext.form.field.Checkbox', {
                 fieldLabel: sensor.label,
                 labelAlign: 'right',
                 itemId: sensor.name,
                 checked: checked,
-                disabled: false,   // всегда редактируемые
+                disabled: false,
                 labelCls: 'x-form-cb-label'
             });
             var wrapper = Ext.create('Ext.container.Container', {
@@ -406,7 +417,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
         localStorage.setItem(storageKey, JSON.stringify(values));
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
-        // Обновляем фильтр по датчику, если он активен
         me.applyVehicleFilters();
     },
 
@@ -437,6 +447,8 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
 
         var data = [];
+        var categories = [];
+        var seriesData = [];
         Ext.each(me.sensors, function(sensor) {
             var enabled = totals[sensor.name];
             var percent = totalVehicleCount ? Math.round((enabled / totalVehicleCount) * 100) : 0;
@@ -446,8 +458,55 @@ Ext.define('Store.sensor_dashboard.Module', {
                 enabledCount: enabled,
                 percentage: percent
             });
+            categories.push(sensor.label);
+            seriesData.push(enabled);
         });
         store.loadData(data);
+
+        // Отрисовка диаграммы
+        me.renderChart(categories, seriesData, totalVehicleCount);
+    },
+
+    renderChart: function (categories, seriesData, totalVehicleCount) {
+        var me = this;
+        var container = me.mainPanel.chartContainer;
+        if (!container) return;
+
+        // Убедимся, что DOM-элемент существует
+        var el = document.getElementById('sensorChart');
+        if (!el) {
+            // Создаём, если ещё нет
+            container.update('<div id="sensorChart" style="width:100%; height:100%;"></div>');
+            el = document.getElementById('sensorChart');
+        }
+        if (!el) return;
+
+        // Проверяем наличие Highcharts
+        if (typeof Highcharts === 'undefined') {
+            el.innerHTML = '<div style="padding:20px; text-align:center;">Highcharts не загружен</div>';
+            return;
+        }
+
+        // Если график уже существует, уничтожаем его
+        if (me.chart) {
+            me.chart.destroy();
+        }
+
+        me.chart = Highcharts.chart(el, {
+            chart: { type: 'column' },
+            title: { text: 'Количество ТС с включённым датчиком' },
+            subtitle: { text: 'Всего ТС: ' + totalVehicleCount },
+            xAxis: { categories: categories, title: { text: 'Датчики' } },
+            yAxis: { title: { text: 'Количество ТС' }, min: 0 },
+            tooltip: { headerFormat: '<b>{point.x}</b><br/>', pointFormat: '{point.y} из {point.total} ТС' },
+            plotOptions: { column: { dataLabels: { enabled: true } } },
+            series: [{
+                name: 'Включено',
+                data: seriesData,
+                color: '#2c7bb6'
+            }],
+            credits: { enabled: false }
+        });
     },
 
     clearConfigForm: function () {
