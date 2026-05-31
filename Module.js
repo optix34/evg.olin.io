@@ -1,9 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
- * Правая панель: блок чекбоксов оформлен как панель (аналогично таблице статистики),
- * чекбоксы всегда чёрные, чёткие, контейнер с белым фоном, рамкой, скруглением.
- * При загрузке автоматически выбирается первый ТС.
+ * Правая панель: чекбоксы всегда активны (редактирование постоянно доступно),
+ * кнопка «Применить» сохраняет изменения.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -66,30 +65,13 @@ Ext.define('Store.sensor_dashboard.Module', {
                 margin: 5px 15px 5px 0;
                 white-space: nowrap;
             }
-            /* Иконка замка для неактивных */
-            .sensor-checkbox-item.locked .x-form-cb-label:after {
-                content: " 🔒";
-                font-size: 11px;
-                opacity: 0.8;
-                margin-left: 4px;
-            }
-            /* Чекбоксы и текст – всегда чёрные, чёткие */
+            /* Чекбоксы и текст – всегда чёрные, чёткие, активные */
             .x-form-cb-label {
                 color: #000000 !important;
                 font-weight: normal !important;
-                opacity: 1 !important;
             }
             .x-form-checkbox {
                 opacity: 1 !important;
-            }
-            .x-form-checkbox:disabled {
-                opacity: 1 !important;
-                background-color: transparent !important;
-                border-color: #666666 !important;
-            }
-            .x-form-field:disabled + .x-form-cb-label {
-                opacity: 1 !important;
-                color: #000000 !important;
             }
             /* Панель статистики */
             .dashboard-panel {
@@ -344,12 +326,12 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoHeight: true
         });
 
+        // Тулбар только с кнопкой «Применить» (без «Редактировать»)
         var tbar = Ext.create('Ext.toolbar.Toolbar', {
             items: [
                 { xtype: 'label', itemId: 'vehicleNameLabel', text: 'ТС не выбрано', style: 'font-weight: bold; font-size: 13px;' },
                 '->',
-                { text: 'Редактировать', handler: function () { me.setSensorsEditable(true); } },
-                { text: 'Применить', handler: function () { me.saveCurrentConfig(); me.setSensorsEditable(false); me.refreshDashboard(); } }
+                { text: 'Применить', handler: function () { me.saveCurrentConfig(); me.refreshDashboard(); } }
             ]
         });
 
@@ -385,12 +367,13 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         Ext.each(me.sensors, function (sensor) {
             var checked = (values[sensor.name] === 'yes');
+            // Чекбоксы всегда активны (disabled: false)
             var checkbox = Ext.create('Ext.form.field.Checkbox', {
                 fieldLabel: sensor.label,
                 labelAlign: 'right',
                 itemId: sensor.name,
                 checked: checked,
-                disabled: true,
+                disabled: false,   // всегда редактируемые
                 labelCls: 'x-form-cb-label'
             });
             var wrapper = Ext.create('Ext.container.Container', {
@@ -399,28 +382,11 @@ Ext.define('Store.sensor_dashboard.Module', {
                 margin: '0 15 0 0'
             });
             container.add(wrapper);
-            checkbox.wrapper = wrapper;
-            if (checkbox.disabled) wrapper.addCls('locked');
         });
 
         me.currentVehid = vehid;
         me.currentVehicleName = vehicleName;
         me.refreshDashboard();
-    },
-
-    setSensorsEditable: function (editable) {
-        var container = this.mainPanel.sensorsContainer;
-        Ext.each(this.sensors, function (sensor) {
-            var wrapper = container.down('#' + sensor.name)?.ownerCt;
-            var checkbox = container.down('#' + sensor.name);
-            if (checkbox) {
-                checkbox.setDisabled(!editable);
-                if (wrapper) {
-                    if (editable) wrapper.removeCls('locked');
-                    else wrapper.addCls('locked');
-                }
-            }
-        });
     },
 
     saveCurrentConfig: function () {
@@ -440,6 +406,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
         localStorage.setItem(storageKey, JSON.stringify(values));
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
+        // Обновляем фильтр по датчику, если он активен
         me.applyVehicleFilters();
     },
 
