@@ -1,9 +1,8 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
- * Правая панель: чекбоксы для выбранного ТС и дашборд.
- * Чекбоксы и названия – чёрные, жирные, с высокой контрастностью.
- * Неактивные чекбоксы отличаются только иконкой замка.
+ * Правая панель: чекбоксы всегда чёрные, чёткие (как в режиме редактирования),
+ * контейнер прозрачный, при загрузке автоматически выбирается первый ТС из списка.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -48,24 +47,45 @@ Ext.define('Store.sensor_dashboard.Module', {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
-            /* Общие стили для контейнеров */
+            /* Контейнер чекбоксов – прозрачный, без фона */
+            .sensors-hbox-container {
+                padding: 12px 15px;
+                border-bottom: 1px solid #e0e4e8;
+                background: transparent !important;
+            }
+            /* Каждый чекбокс */
             .sensor-checkbox-item {
                 display: inline-block;
                 margin: 5px 15px 5px 0;
                 white-space: nowrap;
             }
+            /* Иконка замка для неактивных (заблокированных) полей */
             .sensor-checkbox-item.locked .x-form-cb-label:after {
                 content: " 🔒";
                 font-size: 11px;
-                opacity: 0.9;
+                opacity: 0.8;
                 margin-left: 4px;
-                font-weight: normal;
             }
-            .sensors-hbox-container {
-                background: #ffffff;
-                padding: 12px 15px;
-                border-bottom: 1px solid #e0e4e8;
+            /* Чекбоксы и текст – всегда чёрные, чёткие, без прозрачности */
+            .x-form-cb-label {
+                color: #000000 !important;
+                font-weight: normal !important;
+                opacity: 1 !important;
             }
+            .x-form-checkbox {
+                opacity: 1 !important;
+            }
+            /* Неактивные чекбоксы – такие же чёрные, без прозрачности, но с замком */
+            .x-form-checkbox:disabled {
+                opacity: 1 !important;
+                background-color: transparent !important;
+                border-color: #666666 !important;
+            }
+            .x-form-field:disabled + .x-form-cb-label {
+                opacity: 1 !important;
+                color: #000000 !important;
+            }
+            /* Панель дашборда */
             .dashboard-panel {
                 margin: 15px 10px;
                 background: #ffffff;
@@ -75,61 +95,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             .dashboard-grid .x-grid-header {
                 background: #f5f5f5;
             }
-
-            /* ===== ГЛАВНОЕ: ЧЁТКИЕ, КОНТРАСТНЫЕ ЧЕКБОКСЫ И ТЕКСТ ===== */
-            /* Подписи чекбоксов – жирный чёрный текст */
-            .x-form-cb-label {
-                color: #000000 !important;
-                font-weight: 700 !important;
-                font-size: 13px !important;
-                opacity: 1 !important;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-            }
-            /* Сам чекбокс – увеличенный, с чёрной рамкой, белым фоном */
-            .x-form-checkbox {
-                width: 18px !important;
-                height: 18px !important;
-                border: 2px solid #000000 !important;
-                background: #ffffff !important;
-                border-radius: 3px !important;
-                margin-right: 6px !important;
-                opacity: 1 !important;
-                cursor: pointer;
-            }
-            /* Отмеченное состояние – чёрный фон и белая галочка */
-            .x-form-checkbox:checked {
-                background: #000000 !important;
-                position: relative;
-            }
-            .x-form-checkbox:checked::after {
-                content: "✓";
-                color: #ffffff !important;
-                font-size: 14px;
-                font-weight: bold;
-                position: absolute;
-                left: 2px;
-                top: -2px;
-            }
-            /* Неактивные чекбоксы – без изменения цвета, только замок */
-            .x-form-checkbox:disabled {
-                opacity: 1 !important;
-                background: #ffffff !important;
-                border-color: #000000 !important;
-                cursor: default;
-            }
-            .x-form-checkbox:disabled:checked {
-                background: #000000 !important;
-            }
-            .x-form-checkbox:disabled:checked::after {
-                content: "✓";
-                color: #ffffff !important;
-            }
-            /* Подписи неактивных – без прозрачности, чёрные */
-            .x-form-field:disabled + .x-form-cb-label {
-                opacity: 1 !important;
-                color: #000000 !important;
-            }
-            /* Поле поиска и комбобокс */
+            /* Поля поиска и фильтра */
             .vehicle-search-field, .sensor-filter-combo {
                 margin: 5px;
                 width: 180px;
@@ -243,7 +209,15 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.searchField = searchField;
         me.sensorFilterCombo = sensorFilterCombo;
 
-        fullStore.on('load', function() { me.applyVehicleFilters(); });
+        // После загрузки данных – выбрать первое ТС в списке (если есть)
+        fullStore.on('load', function() {
+            me.applyVehicleFilters();
+            // Автоматический выбор первого ТС в отфильтрованном списке
+            var firstRecord = me.vehicleGridStore.getAt(0);
+            if (firstRecord) {
+                grid.getSelectionModel().select(firstRecord);
+            }
+        });
 
         return grid;
     },
@@ -278,11 +252,36 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
 
         gridStore.loadData(filtered);
-        var selection = me.getSelectedVehicleFromGrid();
-        if (!selection && me.currentVehid) {
+
+        // Если после фильтрации не осталось ТС – очищаем форму
+        if (gridStore.getCount() === 0) {
             me.clearConfigForm();
-        } else if (selection && selection.vehid !== me.currentVehid) {
-            me.loadConfigForVehicle(selection.vehid, selection.name);
+            return;
+        }
+
+        // Выбираем первый ТС, если текущий выбранный отсутствует в новом списке
+        var selectedRecord = me.getSelectedVehicleFromGrid();
+        if (!selectedRecord) {
+            var first = gridStore.getAt(0);
+            if (first) {
+                me.selectVehicleInGrid(first);
+            }
+        } else {
+            // Проверяем, есть ли выбранный ТС в новом фильтрованном списке
+            var exists = false;
+            gridStore.each(function(rec) {
+                if (rec.get('vehid') === selectedRecord.vehid) exists = true;
+            });
+            if (!exists && gridStore.getCount() > 0) {
+                me.selectVehicleInGrid(gridStore.getAt(0));
+            }
+        }
+    },
+
+    selectVehicleInGrid: function(record) {
+        var grid = this.navTab.items.get(0);
+        if (grid && grid.getSelectionModel) {
+            grid.getSelectionModel().select(record);
         }
     },
 
@@ -430,7 +429,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
         localStorage.setItem(storageKey, JSON.stringify(values));
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
-        me.applyVehicleFilters();
+        me.applyVehicleFilters(); // обновляем фильтр по датчику
     },
 
     refreshDashboard: function () {
