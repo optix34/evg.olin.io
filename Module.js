@@ -2,8 +2,8 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: таблица датчиков как Ext.grid.Panel с контекстным меню в заголовках.
- * Исправлена ошибка создания меню (isXType is not a function).
- * Отключена accessibility в Highcharts для убирания предупреждения.
+ * Контекстное меню создаётся с помощью Ext.menu.Menu для корректной работы.
+ * Отключена accessibility в Highcharts.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -266,33 +266,34 @@ Ext.define('Store.sensor_dashboard.Module', {
     createMainPanel: function () {
         var me = this;
 
-        // Store для одной строки (текущее ТС)
         var sensorsStore = Ext.create('Ext.data.Store', {
             fields: me.sensors.map(function(s) { return s.name; }),
             data: [{}]
         });
 
-        // Функция создания пунктов меню (возвращает массив)
-        function getMenuItems(sensor) {
-            return [
-                {
-                    text: 'Выбрать все',
-                    handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, true); }
-                },
-                {
-                    text: 'Снять все',
-                    handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, false); }
-                },
-                {
-                    text: 'Фильтровать по этому датчику',
-                    handler: function() {
-                        if (me.sensorFilterCombo) {
-                            me.sensorFilterCombo.setValue(sensor.name);
-                            me.applyVehicleFilters();
+        // Функция для создания меню для каждого датчика
+        function createMenuForSensor(sensor) {
+            return Ext.create('Ext.menu.Menu', {
+                items: [
+                    {
+                        text: 'Выбрать все',
+                        handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, true); }
+                    },
+                    {
+                        text: 'Снять все',
+                        handler: function() { me.setAllCheckboxesForCurrentVehicle(sensor.name, false); }
+                    },
+                    {
+                        text: 'Фильтровать по этому датчику',
+                        handler: function() {
+                            if (me.sensorFilterCombo) {
+                                me.sensorFilterCombo.setValue(sensor.name);
+                                me.applyVehicleFilters();
+                            }
                         }
                     }
-                }
-            ];
+                ]
+            });
         }
 
         var columns = [];
@@ -301,10 +302,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 text: sensor.label,
                 dataIndex: sensor.name,
                 flex: 1,
-                // Свойство menu должно быть объектом с items (массивом пунктов)
-                menu: {
-                    items: getMenuItems(sensor)
-                },
+                menu: createMenuForSensor(sensor),   // готовый объект Ext.menu.Menu
                 renderer: function(value) {
                     var checked = (value === 'yes');
                     return '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="pointer-events:none;">';
@@ -520,7 +518,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             chart: { type: 'column', backgroundColor: 'transparent', width: null },
             title: { text: 'Количество ТС с включённым датчиком', style: { fontSize: '16px', fontWeight: 'bold' } },
             subtitle: { text: 'Всего ТС: ' + totalVehicleCount, style: { fontSize: '13px', color: '#555' } },
-            accessibility: { enabled: false },  // отключаем предупреждение
+            accessibility: { enabled: false },
             xAxis: { categories: categories, title: { text: 'Датчики' }, labels: { rotation: -45 } },
             yAxis: { title: { text: 'Количество ТС' }, min: 0, allowDecimals: false },
             tooltip: { headerFormat: '<b>{point.x}</b><br/>', pointFormat: '{point.y} из {point.total} ТС ({point.percentage:.1f}%)' },
