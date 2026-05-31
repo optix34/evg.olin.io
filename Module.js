@@ -1,23 +1,22 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель: поиск по ТС + фильтр по датчику.
- * Правая панель: таблица датчиков как Ext.grid.Panel с контекстным меню в заголовках.
- * Контекстное меню создаётся с помощью Ext.menu.Menu для корректной работы.
- * Отключена accessibility в Highcharts.
+ * Левая панель: список ТС с колонкой «Датчики» и иконками активных датчиков.
+ * Правая панель: таблица датчиков (Ext.grid.Panel) с контекстным меню.
+ * Сохранение в localStorage, фильтрация, диаграмма Highcharts.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
     sensors: [
-        { name: 'aog', label: 'АОГ' },
-        { name: 'video', label: 'Видео' },
-        { name: 'tablo', label: 'Табло' },
-        { name: 'voice', label: 'Голос' },
-        { name: 'tf', label: 'ТФ' },
-        { name: 'kpp', label: 'BLE' },
-        { name: 'thg', label: 'ТХГ' },
-        { name: 'dut', label: 'ДУТ' },
-        { name: 'temp_sensor', label: 'Датчик t' }
+        { name: 'aog', label: 'АОГ', icon: 'bi-broadcast' },
+        { name: 'video', label: 'Видео', icon: 'bi-camera-video' },
+        { name: 'tablo', label: 'Табло', icon: 'bi-grid-3x2-gap' },
+        { name: 'voice', label: 'Голос', icon: 'bi-mic' },
+        { name: 'tf', label: 'ТФ', icon: 'bi-toggle-on' },
+        { name: 'kpp', label: 'BLE', icon: 'bi-toggle-on' },
+        { name: 'thg', label: 'ТХГ', icon: 'bi-speedometer2' },
+        { name: 'dut', label: 'ДУТ', icon: 'bi-align-top' },
+        { name: 'temp_sensor', label: 'Датчик t', icon: 'bi-thermometer-snow' }
     ],
 
     initModule: function () {
@@ -93,8 +92,22 @@ Ext.define('Store.sensor_dashboard.Module', {
                 width: 100%;
                 height: 100%;
             }
+            /* стили для иконок в левом гриде */
+            .sensor-icons i {
+                font-size: 14px;
+                margin: 0 2px;
+                color: #2c7bb6;
+                vertical-align: middle;
+            }
         `;
         document.head.appendChild(styleEl);
+        // Подключаем Bootstrap Icons, если ещё не загружены
+        if (!document.querySelector('link[href*="bootstrap-icons"]')) {
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css';
+            document.head.appendChild(link);
+        }
     },
 
     getApiUrl: function (endpoint) {
@@ -137,6 +150,12 @@ Ext.define('Store.sensor_dashboard.Module', {
             autoLoad: true
         });
 
+        // Store для отображения с дополнительным полем 'iconsHtml'
+        var displayStore = Ext.create('Ext.data.Store', {
+            fields: ['vehid', 'name', 'iconsHtml'],
+            data: []
+        });
+
         var searchField = Ext.create('Ext.form.field.Text', {
             cls: 'vehicle-search-field',
             emptyText: 'Поиск ТС...',
@@ -167,8 +186,18 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
 
         var grid = Ext.create('Ext.grid.Panel', {
-            store: Ext.create('Ext.data.Store', { fields: ['vehid', 'name'], data: [] }),
-            columns: [{ text: 'ТС', dataIndex: 'name', flex: 1 }],
+            store: displayStore,
+            columns: [
+                { text: 'ТС', dataIndex: 'name', flex: 2 },
+                { 
+                    text: 'Датчики', 
+                    dataIndex: 'iconsHtml', 
+                    flex: 1,
+                    renderer: function(value) {
+                        return value ? value : '';
+                    }
+                }
+            ],
             tbar: [searchField, sensorFilterCombo],
             listeners: {
                 selectionchange: function(selModel, selected) {
@@ -183,30 +212,71 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
 
         me.vehicleFullStore = fullStore;
-        me.vehicleGridStore = grid.getStore();
+        me.vehicleDisplayStore = displayStore;
         me.searchField = searchField;
         me.sensorFilterCombo = sensorFilterCombo;
 
-        fullStore.on('load', function() {
+        // Обновление иконок для всех ТС (при загрузке и после изменений)
+        function updateIconsForAllVehicles() {
+            var allVehicles = [];
+            fullStore.each(function(rec) {
+                allVehicles.push({ vehid: rec.get('vehid'), name: rec.get('name') });
+            });
+            var recordsWithIcons = [];
+            Ext.each(allVehicles, function(vehicle) {
+                var storageKey = 'sensor_dashboard_' + vehicle.vehid;
+                var saved = localStorage.getItem(storageKey);
+                var values = saved ? JSON.parse(saved) : {};
+                var iconsHtml = me.getIconsHtml(values);
+                recordsWithIcons.push({
+                    vehid: vehicle.vehid,
+                    name: vehicle.name,
+                    iconsHtml: iconsHtml
+                });
+            });
+            // Сохраняем все записи в displayStore (для фильтрации используется отдельно)
+            displayStore.loadData(recordsWithIcons);
+            // Применяем текущие фильтры
             me.applyVehicleFilters();
-            var firstRecord = me.vehicleGridStore.getAt(0);
+        }
+
+        fullStore.on('load', function() {
+            updateIconsForAllVehicles();
+            // После загрузки выбираем первый ТС в отфильтрованном списке
+            var firstRecord = displayStore.getAt(0);
             if (firstRecord) grid.getSelectionModel().select(firstRecord);
         });
 
+        // Функция для вызова обновления иконок извне (после сохранения настроек)
+        me.updateVehicleIcons = function() {
+            updateIconsForAllVehicles();
+        };
+
         return grid;
+    },
+
+    getIconsHtml: function(values) {
+        var me = this;
+        var icons = [];
+        Ext.each(me.sensors, function(sensor) {
+            if (values[sensor.name] === 'yes') {
+                icons.push('<i class="bi ' + sensor.icon + '" title="' + sensor.label + '"></i>');
+            }
+        });
+        return icons.length ? '<div class="sensor-icons">' + icons.join(' ') + '</div>' : '';
     },
 
     applyVehicleFilters: function() {
         var me = this;
         var fullStore = me.vehicleFullStore;
-        var gridStore = me.vehicleGridStore;
-        if (!fullStore || !gridStore) return;
+        var displayStore = me.vehicleDisplayStore;
+        if (!fullStore || !displayStore) return;
 
         var searchValue = me.searchField ? me.searchField.getValue() : '';
         var selectedSensor = me.sensorFilterCombo ? me.sensorFilterCombo.getValue() : null;
 
         var filtered = [];
-        fullStore.each(function(record) {
+        displayStore.each(function(record) {
             var vehid = record.get('vehid');
             var name = record.get('name');
 
@@ -225,24 +295,24 @@ Ext.define('Store.sensor_dashboard.Module', {
             filtered.push(record.copy());
         });
 
-        gridStore.loadData(filtered);
+        displayStore.loadData(filtered);
 
-        if (gridStore.getCount() === 0) {
+        if (displayStore.getCount() === 0) {
             me.clearConfigForm();
             return;
         }
 
         var selectedRecord = me.getSelectedVehicleFromGrid();
         if (!selectedRecord) {
-            var first = gridStore.getAt(0);
+            var first = displayStore.getAt(0);
             if (first) me.selectVehicleInGrid(first);
         } else {
             var exists = false;
-            gridStore.each(function(rec) {
+            displayStore.each(function(rec) {
                 if (rec.get('vehid') === selectedRecord.vehid) exists = true;
             });
-            if (!exists && gridStore.getCount() > 0) {
-                me.selectVehicleInGrid(gridStore.getAt(0));
+            if (!exists && displayStore.getCount() > 0) {
+                me.selectVehicleInGrid(displayStore.getAt(0));
             }
         }
     },
@@ -271,7 +341,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             data: [{}]
         });
 
-        // Функция для создания меню для каждого датчика
         function createMenuForSensor(sensor) {
             return Ext.create('Ext.menu.Menu', {
                 items: [
@@ -302,14 +371,12 @@ Ext.define('Store.sensor_dashboard.Module', {
                 text: sensor.label,
                 dataIndex: sensor.name,
                 flex: 1,
-                menu: createMenuForSensor(sensor),   // готовый объект Ext.menu.Menu
+                menu: createMenuForSensor(sensor),
                 renderer: function(value) {
                     var checked = (value === 'yes');
                     return '<input type="checkbox" ' + (checked ? 'checked' : '') + ' style="pointer-events:none;">';
                 },
-                field: {
-                    xtype: 'checkboxfield'
-                }
+                field: { xtype: 'checkboxfield' }
             });
         });
 
@@ -450,7 +517,11 @@ Ext.define('Store.sensor_dashboard.Module', {
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
         localStorage.setItem(storageKey, JSON.stringify(values));
         Ext.Msg.alert('Сохранено', 'Настройки сохранены');
+        
+        // Обновляем иконки в левом списке
+        if (me.updateVehicleIcons) me.updateVehicleIcons();
         me.applyVehicleFilters();
+        me.refreshDashboard();
     },
 
     refreshDashboard: function () {
