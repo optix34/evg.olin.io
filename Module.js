@@ -4,6 +4,7 @@
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
  * Чекбоксы равномерно распределены по всей ширине, отступы от края минимальны.
  * Клик по строке таблицы статистики фильтрует ТС по датчику.
+ * Датчик t отображается как "t" (без слова "Датчик").
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -17,7 +18,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         { name: 'kpp', label: 'BLE' },
         { name: 'thg', label: 'ТХГ' },
         { name: 'dut', label: 'ДУТ' },
-        { name: 'temp_sensor', label: 'Датчик t' }
+        { name: 'temp_sensor', label: 't' }          // переименовано: "Датчик t" → "t"
     ],
 
     initModule: function () {
@@ -65,7 +66,7 @@ Ext.define('Store.sensor_dashboard.Module', {
             .sensors-hbox-container {
                 display: flex !important;
                 flex-wrap: wrap;
-                padding: 12px 8px 12px 4px;  /* уменьшен отступ слева */
+                padding: 12px 8px 12px 4px;
                 background: transparent;
             }
             .sensor-checkbox-item {
