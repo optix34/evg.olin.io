@@ -2,8 +2,8 @@
  * Extension for PILOT – Доп. Оборудование
  * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками + кнопка импорта CSV.
  * Правая панель: таблица датчиков через widgetcolumn с чекбоксами.
- * Импорт CSV: загружает файл с колонками (гос.номер, АОГ, Видео, Табло, Голос, ТФ, BLE, ТХГ, ДУТ, Датчик t)
- * и обновляет настройки датчиков для найденных транспортных средств.
+ * Импорт CSV: поддерживает гибкие названия колонок (без учёта регистра), отсутствие некоторых колонок не вызывает ошибку.
+ * Обязательна только колонка с гос.номером (гос.номер / госномер / plate / gos_number).
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -193,7 +193,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             }
         });
 
-        // Кнопка импорта CSV без значка (только текст)
         var importBtn = Ext.create('Ext.button.Button', {
             cls: 'import-csv-btn',
             text: 'Импорт CSV',
@@ -235,7 +234,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         return grid;
     },
 
-    // Импорт CSV
     importCsv: function() {
         var me = this;
         var input = document.createElement('input');
@@ -258,29 +256,51 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         var lines = csvContent.split(/\r?\n/);
         if (lines.length === 0) return;
-        var headers = lines[0].split(',').map(function(h) { return h.trim(); });
-        // Ожидаемые колонки: гос.номер, АОГ, Видео, Табло, Голос, ТФ, BLE, ТХГ, ДУТ, Датчик t
-        var expectedCols = ['гос.номер', 'АОГ', 'Видео', 'Табло', 'Голос', 'ТФ', 'BLE', 'ТХГ', 'ДУТ', 'Датчик t'];
-        var colMap = {};
-        for (var i = 0; i < expectedCols.length; i++) {
-            var expected = expectedCols[i];
-            var idx = headers.indexOf(expected);
-            if (idx === -1) {
-                Ext.Msg.alert('Ошибка', 'В CSV отсутствует колонка "' + expected + '"');
-                return;
-            }
-            colMap[expected] = idx;
+
+        // Получаем заголовки, приводим к нижнему регистру и убираем лишние пробелы
+        var rawHeaders = lines[0].split(',').map(function(h) { return h.trim().toLowerCase(); });
+        
+        // Ищем индекс колонки с гос.номером (различные варианты написания)
+        var plateIndex = -1;
+        var possiblePlateNames = ['гос.номер', 'госномер', 'gos_number', 'plate', 'номер', 'гос номер'];
+        for (var p = 0; p < possiblePlateNames.length; p++) {
+            var name = possiblePlateNames[p].toLowerCase();
+            plateIndex = rawHeaders.indexOf(name);
+            if (plateIndex !== -1) break;
         }
+        if (plateIndex === -1) {
+            Ext.Msg.alert('Ошибка', 'В CSV не найдена колонка с гос.номером (ожидаются: гос.номер, госномер, plate, gos_number)');
+            return;
+        }
+
+        // Для каждого датчика пытаемся найти соответствующую колонку (необязательно)
+        var sensorColIndex = {};
+        Ext.each(me.sensors, function(sensor) {
+            if (sensor.csvCol) {
+                var colName = sensor.csvCol.toLowerCase();
+                var idx = rawHeaders.indexOf(colName);
+                if (idx !== -1) {
+                    sensorColIndex[sensor.name] = idx;
+                } else {
+                    // Если точного совпадения нет, пробуем альтернативные варианты (например, 'аог' без учета регистра)
+                    var altIdx = rawHeaders.indexOf(sensor.label.toLowerCase());
+                    if (altIdx !== -1) {
+                        sensorColIndex[sensor.name] = altIdx;
+                    }
+                }
+            }
+        });
 
         var updated = 0;
         for (var rowIdx = 1; rowIdx < lines.length; rowIdx++) {
             var line = lines[rowIdx].trim();
             if (line === '') continue;
             var parts = line.split(',');
-            if (parts.length < expectedCols.length) continue;
-            var plate = parts[colMap['гос.номер']].trim();
+            if (parts.length <= plateIndex) continue;
+            var plate = parts[plateIndex].trim();
             if (plate === '') continue;
-            // Найти ТС по гос.номеру в fullStore
+
+            // Найти ТС по гос.номеру
             var foundRecord = null;
             me.vehicleFullStore.each(function(rec) {
                 var recPlate = rec.get('plate');
@@ -293,24 +313,28 @@ Ext.define('Store.sensor_dashboard.Module', {
                 console.warn('ТС с номером ' + plate + ' не найдено');
                 continue;
             }
+
             var vehid = foundRecord.get('vehid');
             var storageKey = 'sensor_dashboard_' + vehid;
             var saved = localStorage.getItem(storageKey);
             var values = saved ? JSON.parse(saved) : {};
 
-            // Обновляем датчики по колонкам
+            // Обновляем только те датчики, для которых есть колонка в CSV
             Ext.each(me.sensors, function(sensor) {
-                if (sensor.csvCol) {
-                    var csvVal = parts[colMap[sensor.csvCol]].trim().toLowerCase();
+                var colIdx = sensorColIndex[sensor.name];
+                if (colIdx !== undefined && parts.length > colIdx) {
+                    var csvVal = parts[colIdx].trim().toLowerCase();
                     var isYes = (csvVal === 'да' || csvVal === 'yes' || csvVal === '1' || csvVal === 'true');
                     values[sensor.name] = isYes ? 'yes' : 'no';
                 }
+                // Если колонка отсутствует, значение датчика не меняется
             });
 
             localStorage.setItem(storageKey, JSON.stringify(values));
             updated++;
             me.updateVehicleIcons(vehid);
         }
+
         Ext.Msg.alert('Импорт завершён', 'Обновлено ТС: ' + updated);
         me.applyVehicleFilters();
         me.refreshDashboard();
