@@ -3,8 +3,8 @@
  * Левая панель: поиск по ТС + фильтр по датчику.
  * Правая панель: чекбоксы всегда активны, кнопка «Применить».
  * Под таблицей статистики – увеличенная столбчатая диаграмма Highcharts.
- * Каждый столбец (датчик) имеет свой цвет, диаграмма читаема.
- * Добавлен вертикальный скроллинг для правого окна, переименован датчик КПП → BLE.
+ * Каждый столбец (датчик) имеет свой цвет, диаграмма растягивается на всю ширину.
+ * Добавлен вертикальный скроллинг, датчик КПП переименован в BLE.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -43,6 +43,24 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.navTab = navTab;
 
         me.refreshDashboard();
+
+        // Слушатель изменения размера окна для перерисовки графика
+        me.resizeHandler = function() {
+            if (me.chart && me.chart.reflow) {
+                me.chart.reflow();
+            }
+        };
+        Ext.on(window, 'resize', me.resizeHandler);
+    },
+
+    onDestroy: function() {
+        if (this.resizeHandler) {
+            Ext.un(window, 'resize', this.resizeHandler);
+        }
+        if (this.chart) {
+            this.chart.destroy();
+        }
+        this.callParent();
     },
 
     addCustomStyles: function () {
@@ -91,8 +109,12 @@ Ext.define('Store.sensor_dashboard.Module', {
                 border: 1px solid #e0e4e8;
                 border-radius: 4px;
                 padding: 10px;
-                overflow: visible !important;
+                width: auto;
                 height: 450px;
+            }
+            #sensorChart {
+                width: 100%;
+                height: 100%;
             }
         `;
         document.head.appendChild(styleEl);
@@ -355,7 +377,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 { xtype: 'component', height: 10 },
                 chartContainer
             ],
-            autoScroll: true   // добавлен вертикальный скроллинг
+            autoScroll: true
         });
 
         mainPanel.sensorsContainer = fieldContainer;
@@ -489,7 +511,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             me.chart.destroy();
         }
 
-        // Набор ярких цветов для каждого датчика
         var colors = [
             '#7cb5ec', '#434348', '#90ed7d', '#f7a35c', '#8085e9',
             '#f15c80', '#e4d354', '#2b908f', '#f45b5b', '#91e8e1'
@@ -499,7 +520,8 @@ Ext.define('Store.sensor_dashboard.Module', {
             chart: {
                 type: 'column',
                 backgroundColor: 'transparent',
-                style: { fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif' }
+                style: { fontFamily: 'Segoe UI, Tahoma, Geneva, Verdana, sans-serif' },
+                width: '100%'   // явно задаём ширину на 100%
             },
             title: {
                 text: 'Количество ТС с включённым датчиком',
