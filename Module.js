@@ -1,16 +1,12 @@
 /**
  * Extension for PILOT – Доп. Оборудование
  * Синхронизация через Node.js бэкенд (HTTPS, порт 3001) с автоопределением локального/внешнего адреса.
- * Все настройки датчиков сохраняются на сервер и синхронизируются между устройствами.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
-    // Адреса бэкенда
     externalBackend: 'https://37.139.99.253:3001',
     localBackend: 'https://192.168.0.139:3001',
-
-    // Будет установлен после проверки доступности
     backendUrl: null,
 
     sensors: [
@@ -29,7 +25,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        // Определяем доступный адрес бэкенда (локальный или внешний)
         me.detectBackendUrl(function() {
             var navTab = Ext.create('Ext.panel.Panel', {
                 title: 'Доп. Оборудование',
@@ -66,7 +61,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
     },
 
-    // Проверка доступности локального адреса бэкенда
     detectBackendUrl: function(callback) {
         var me = this;
         Ext.Ajax.request({
@@ -78,10 +72,17 @@ Ext.define('Store.sensor_dashboard.Module', {
                 console.log('[Backend] Используем локальный адрес: ' + me.localBackend);
                 if (callback) callback();
             },
-            failure: function() {
-                me.backendUrl = me.externalBackend;
-                console.log('[Backend] Используем внешний адрес: ' + me.externalBackend);
-                if (callback) callback();
+            failure: function(response) {
+                // Ошибка может быть из-за недоверенного сертификата (status=0)
+                if (response.status === 0 && response.responseText === '') {
+                    me.backendUrl = me.localBackend;
+                    console.log('[Backend] Локальный адрес доступен (сертификат недоверенный), используем его: ' + me.localBackend);
+                    if (callback) callback();
+                } else {
+                    me.backendUrl = me.externalBackend;
+                    console.log('[Backend] Используем внешний адрес: ' + me.externalBackend);
+                    if (callback) callback();
+                }
             }
         });
     },
