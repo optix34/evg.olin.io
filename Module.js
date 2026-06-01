@@ -5,7 +5,7 @@
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
-    backendUrl: 'http://37.139.99.253:3001',
+    backendUrl: 'https://37.139.99.253:3001',
 
     sensors: [
         { name: 'aog', label: 'АОГ', icon: 'fa-bullseye', csvCol: 'АОГ' },
