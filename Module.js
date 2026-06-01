@@ -1,11 +1,17 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Синхронизация через Node.js бэкенд на порту 3001.
+ * Синхронизация через Node.js бэкенд (HTTPS, порт 3001) с автоопределением локального/внешнего адреса.
+ * Все настройки датчиков сохраняются на сервер и синхронизируются между устройствами.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
-    backendUrl: 'https://37.139.99.253:3001',
+    // Адреса бэкенда
+    externalBackend: 'https://37.139.99.253:3001',
+    localBackend: 'https://192.168.0.139:3001',
+
+    // Будет установлен после проверки доступности
+    backendUrl: null,
 
     sensors: [
         { name: 'aog', label: 'АОГ', icon: 'fa-bullseye', csvCol: 'АОГ' },
@@ -23,38 +29,67 @@ Ext.define('Store.sensor_dashboard.Module', {
         var me = this;
         me.addCustomStyles();
 
-        var navTab = Ext.create('Ext.panel.Panel', {
-            title: 'Доп. Оборудование',
-            iconCls: 'fa fa-microchip',
-            width: 350,
-            layout: 'fit',
-            items: [me.createVehicleList()]
+        // Определяем доступный адрес бэкенда (локальный или внешний)
+        me.detectBackendUrl(function() {
+            var navTab = Ext.create('Ext.panel.Panel', {
+                title: 'Доп. Оборудование',
+                iconCls: 'fa fa-microchip',
+                width: 350,
+                layout: 'fit',
+                items: [me.createVehicleList()]
+            });
+
+            var mainPanel = me.createMainPanel();
+            navTab.map_frame = mainPanel;
+
+            skeleton.navigation.add(navTab);
+            skeleton.mapframe.add(mainPanel);
+
+            me.mainPanel = mainPanel;
+            me.navTab = navTab;
+
+            me.resizeObserver = new ResizeObserver(function() {
+                if (me.chart) me.chart.reflow();
+            });
+            if (mainPanel.body) {
+                me.resizeObserver.observe(mainPanel.body.dom);
+            }
+
+            me.syncFromServer(function() {
+                me.refreshDashboard();
+                me.applyVehicleFilters();
+                if (!me.currentVehid && me.vehicleGridStore.getCount() > 0) {
+                    var first = me.vehicleGridStore.getAt(0);
+                    if (first) me.selectVehicleInGrid(first);
+                }
+            });
         });
+    },
 
-        var mainPanel = me.createMainPanel();
-        navTab.map_frame = mainPanel;
-
-        skeleton.navigation.add(navTab);
-        skeleton.mapframe.add(mainPanel);
-
-        me.mainPanel = mainPanel;
-        me.navTab = navTab;
-
-        me.resizeObserver = new ResizeObserver(function() {
-            if (me.chart) me.chart.reflow();
-        });
-        if (mainPanel.body) {
-            me.resizeObserver.observe(mainPanel.body.dom);
-        }
-
-        me.syncFromServer(function() {
-            me.refreshDashboard();
-            me.applyVehicleFilters();
-            if (!me.currentVehid && me.vehicleGridStore.getCount() > 0) {
-                var first = me.vehicleGridStore.getAt(0);
-                if (first) me.selectVehicleInGrid(first);
+    // Проверка доступности локального адреса бэкенда
+    detectBackendUrl: function(callback) {
+        var me = this;
+        Ext.Ajax.request({
+            url: me.localBackend + '/api.php?action=get',
+            method: 'GET',
+            timeout: 2000,
+            success: function() {
+                me.backendUrl = me.localBackend;
+                console.log('[Backend] Используем локальный адрес: ' + me.localBackend);
+                if (callback) callback();
+            },
+            failure: function() {
+                me.backendUrl = me.externalBackend;
+                console.log('[Backend] Используем внешний адрес: ' + me.externalBackend);
+                if (callback) callback();
             }
         });
+    },
+
+    getApiUrl: function (endpoint) {
+        var origin = this.backendUrl.replace(/\/$/, '');
+        if (endpoint.charAt(0) === '/') endpoint = endpoint.slice(1);
+        return origin + '/' + endpoint;
     },
 
     addCustomStyles: function () {
@@ -73,12 +108,6 @@ Ext.define('Store.sensor_dashboard.Module', {
             .sensor-icons i { margin: 0 2px; font-size: 14px; color: #2c3e50; }
         `;
         document.head.appendChild(styleEl);
-    },
-
-    getApiUrl: function (endpoint) {
-        var origin = this.backendUrl.replace(/\/$/, '');
-        if (endpoint.charAt(0) === '/') endpoint = endpoint.slice(1);
-        return origin + '/' + endpoint;
     },
 
     getSensorIconsHtml: function(vehid) {
