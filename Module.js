@@ -1,10 +1,11 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Синхронизация через PHP-бэкенд (SQLite). Данные автоматически сохраняются на сервер
- * и загружаются с сервера при инициализации. Локальный кэш в localStorage.
+ * Синхронизация через Node.js бэкенд на порту 3001.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
+
+    backendUrl: 'http://37.139.99.253:3001',
 
     sensors: [
         { name: 'aog', label: 'АОГ', icon: 'fa-bullseye', csvCol: 'АОГ' },
@@ -46,10 +47,13 @@ Ext.define('Store.sensor_dashboard.Module', {
             me.resizeObserver.observe(mainPanel.body.dom);
         }
 
-        // Сначала загрузить данные с сервера, потом обновить интерфейс
         me.syncFromServer(function() {
             me.refreshDashboard();
             me.applyVehicleFilters();
+            if (!me.currentVehid && me.vehicleGridStore.getCount() > 0) {
+                var first = me.vehicleGridStore.getAt(0);
+                if (first) me.selectVehicleInGrid(first);
+            }
         });
     },
 
@@ -57,59 +61,22 @@ Ext.define('Store.sensor_dashboard.Module', {
         var styleEl = document.createElement('style');
         styleEl.type = 'text/css';
         styleEl.innerHTML = `
-            .sensors-grid-panel {
-                margin: 15px 10px 0 10px;
-                border: 1px solid #e0e4e8;
-                border-radius: 4px;
-                background: #ffffff;
-            }
-            .dashboard-panel {
-                margin: 15px 10px;
-                background: #ffffff;
-                border: 1px solid #e0e4e8;
-                border-radius: 4px;
-            }
-            .dashboard-grid .x-grid-header {
-                background: #f5f5f5;
-            }
-            .dashboard-grid .x-grid-row {
-                cursor: pointer;
-            }
-            .dashboard-grid .x-grid-row:hover {
-                background: #f0f7ff;
-            }
-            .vehicle-search-field, .sensor-filter-combo {
-                margin: 5px;
-                width: 180px;
-            }
-            .import-csv-btn, .export-csv-btn {
-                margin: 5px;
-            }
-            .chart-container {
-                margin: 0 10px 15px 10px;
-                background: #ffffff;
-                border: 1px solid #e0e4e8;
-                border-radius: 4px;
-                padding: 5px;
-                height: 450px;
-                width: auto;
-            }
-            #sensorChart {
-                width: 100%;
-                height: 100%;
-            }
-            .sensor-icons i {
-                margin: 0 2px;
-                font-size: 14px;
-                color: #2c3e50;
-            }
+            .sensors-grid-panel { margin: 15px 10px 0 10px; border: 1px solid #e0e4e8; border-radius: 4px; background: #ffffff; }
+            .dashboard-panel { margin: 15px 10px; background: #ffffff; border: 1px solid #e0e4e8; border-radius: 4px; }
+            .dashboard-grid .x-grid-header { background: #f5f5f5; }
+            .dashboard-grid .x-grid-row { cursor: pointer; }
+            .dashboard-grid .x-grid-row:hover { background: #f0f7ff; }
+            .vehicle-search-field, .sensor-filter-combo { margin: 5px; width: 180px; }
+            .import-csv-btn, .export-csv-btn { margin: 5px; }
+            .chart-container { margin: 0 10px 15px 10px; background: #ffffff; border: 1px solid #e0e4e8; border-radius: 4px; padding: 5px; height: 450px; width: auto; }
+            #sensorChart { width: 100%; height: 100%; }
+            .sensor-icons i { margin: 0 2px; font-size: 14px; color: #2c3e50; }
         `;
         document.head.appendChild(styleEl);
     },
 
     getApiUrl: function (endpoint) {
-        var origin = window.location.origin;
-        if (origin.slice(-1) === '/') origin = origin.slice(0, -1);
+        var origin = this.backendUrl.replace(/\/$/, '');
         if (endpoint.charAt(0) === '/') endpoint = endpoint.slice(1);
         return origin + '/' + endpoint;
     },
@@ -130,13 +97,14 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     createVehicleList: function () {
         var me = this;
-        var apiUrl = me.getApiUrl('ax/tree.php');
+        var pilotOrigin = window.location.origin.replace(/\/$/, '');
+        var treeUrl = pilotOrigin + '/ax/tree.php';
 
         var fullStore = Ext.create('Ext.data.Store', {
             fields: ['vehid', 'name', 'icons'],
             proxy: {
                 type: 'ajax',
-                url: apiUrl,
+                url: treeUrl,
                 extraParams: { vehs: 1, state: 1 },
                 reader: {
                     type: 'json',
@@ -152,9 +120,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                                         icons: me.getSensorIconsHtml(node.vehid)
                                     });
                                 }
-                                if (node.children && node.children.length) {
-                                    traverse(node.children);
-                                }
+                                if (node.children && node.children.length) traverse(node.children);
                             });
                         }
                         traverse(data);
@@ -197,14 +163,12 @@ Ext.define('Store.sensor_dashboard.Module', {
         var importBtn = Ext.create('Ext.button.Button', {
             cls: 'import-csv-btn',
             text: 'Импорт CSV',
-            tooltip: 'Импорт датчиков из CSV',
             handler: function() { me.importCsv(); }
         });
 
         var exportBtn = Ext.create('Ext.button.Button', {
             cls: 'export-csv-btn',
             text: 'Экспорт CSV',
-            tooltip: 'Экспорт всех настроек в CSV',
             handler: function() { me.exportCsv(); }
         });
 
@@ -244,7 +208,7 @@ Ext.define('Store.sensor_dashboard.Module', {
     syncFromServer: function(callback) {
         var me = this;
         Ext.Ajax.request({
-            url: me.getApiUrl('backend/api.php?action=get'),
+            url: me.getApiUrl('api.php?action=get'),
             method: 'GET',
             timeout: 10000,
             success: function(response) {
@@ -263,7 +227,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                         }
                         console.log('[Sync] Данные загружены с сервера');
                     }
-                } catch(e) {}
+                } catch(e) { console.warn(e); }
             },
             failure: function() {
                 console.warn('[Sync] Не удалось загрузить данные с сервера, работаем локально');
@@ -276,15 +240,12 @@ Ext.define('Store.sensor_dashboard.Module', {
 
     syncToServer: function(vehid, settings) {
         var me = this;
-        var payload = {
-            vehid: vehid,
-            settings: {}
-        };
+        var payload = { vehid: vehid, settings: {} };
         for (var name in settings) {
             payload.settings[name] = (settings[name] === 'yes');
         }
         Ext.Ajax.request({
-            url: me.getApiUrl('backend/api.php?action=set'),
+            url: me.getApiUrl('api.php?action=set'),
             method: 'POST',
             jsonData: payload,
             headers: { 'Content-Type': 'application/json' },
@@ -464,7 +425,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         });
 
         gridStore.loadData(filtered);
-
         if (gridStore.getCount() === 0) {
             me.clearConfigForm();
             return;
@@ -512,14 +472,11 @@ Ext.define('Store.sensor_dashboard.Module', {
             record.set('icons', newIcons);
         }
         var fullRecord = me.vehicleFullStore.findRecord('vehid', vehid);
-        if (fullRecord) {
-            fullRecord.set('icons', me.getSensorIconsHtml(vehid));
-        }
+        if (fullRecord) fullRecord.set('icons', me.getSensorIconsHtml(vehid));
     },
 
     createMainPanel: function () {
         var me = this;
-
         var sensorsStore = Ext.create('Ext.data.Store', {
             fields: me.sensors.map(function(s) { return s.name; }),
             data: [{}]
