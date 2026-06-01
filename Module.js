@@ -1,8 +1,7 @@
 /**
  * Extension for PILOT – Доп. Оборудование
- * Левая панель: поиск по ТС + фильтр по датчику + колонка "Датчики" с иконками + кнопка импорта CSV.
- * Правая панель: таблица датчиков через widgetcolumn с чекбоксами (checkboxfield).
- * Импорт CSV: ищет ТС по названию (name), а не по гос.номеру.
+ * Синхронизация через PHP-бэкенд (SQLite). Данные автоматически сохраняются на сервер
+ * и загружаются с сервера при инициализации. Локальный кэш в localStorage.
  */
 Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
@@ -47,7 +46,11 @@ Ext.define('Store.sensor_dashboard.Module', {
             me.resizeObserver.observe(mainPanel.body.dom);
         }
 
-        me.refreshDashboard();
+        // Сначала загрузить данные с сервера, потом обновить интерфейс
+        me.syncFromServer(function() {
+            me.refreshDashboard();
+            me.applyVehicleFilters();
+        });
     },
 
     addCustomStyles: function () {
@@ -79,7 +82,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 margin: 5px;
                 width: 180px;
             }
-            .import-csv-btn {
+            .import-csv-btn, .export-csv-btn {
                 margin: 5px;
             }
             .chart-container {
@@ -195,9 +198,14 @@ Ext.define('Store.sensor_dashboard.Module', {
             cls: 'import-csv-btn',
             text: 'Импорт CSV',
             tooltip: 'Импорт датчиков из CSV',
-            handler: function() {
-                me.importCsv();
-            }
+            handler: function() { me.importCsv(); }
+        });
+
+        var exportBtn = Ext.create('Ext.button.Button', {
+            cls: 'export-csv-btn',
+            text: 'Экспорт CSV',
+            tooltip: 'Экспорт всех настроек в CSV',
+            handler: function() { me.exportCsv(); }
         });
 
         var grid = Ext.create('Ext.grid.Panel', {
@@ -206,7 +214,7 @@ Ext.define('Store.sensor_dashboard.Module', {
                 { text: 'ТС', dataIndex: 'name', flex: 2 },
                 { text: 'Датчики', dataIndex: 'icons', flex: 1, renderer: function(v) { return v || '—'; } }
             ],
-            tbar: [searchField, sensorFilterCombo, '->', importBtn],
+            tbar: [searchField, sensorFilterCombo, '->', importBtn, exportBtn],
             listeners: {
                 selectionchange: function(selModel, selected) {
                     if (selected && selected.length) {
@@ -233,6 +241,59 @@ Ext.define('Store.sensor_dashboard.Module', {
         return grid;
     },
 
+    syncFromServer: function(callback) {
+        var me = this;
+        Ext.Ajax.request({
+            url: me.getApiUrl('backend/api.php?action=get'),
+            method: 'GET',
+            timeout: 10000,
+            success: function(response) {
+                try {
+                    var resp = Ext.decode(response.responseText);
+                    if (resp.success && resp.data) {
+                        for (var vehid in resp.data) {
+                            var settings = resp.data[vehid];
+                            var storageKey = 'sensor_dashboard_' + vehid;
+                            var localSettings = {};
+                            for (var s in settings) {
+                                localSettings[s] = settings[s] === true ? 'yes' : 'no';
+                            }
+                            localStorage.setItem(storageKey, JSON.stringify(localSettings));
+                            me.updateVehicleIcons(vehid);
+                        }
+                        console.log('[Sync] Данные загружены с сервера');
+                    }
+                } catch(e) {}
+            },
+            failure: function() {
+                console.warn('[Sync] Не удалось загрузить данные с сервера, работаем локально');
+            },
+            callback: function() {
+                if (callback) callback();
+            }
+        });
+    },
+
+    syncToServer: function(vehid, settings) {
+        var me = this;
+        var payload = {
+            vehid: vehid,
+            settings: {}
+        };
+        for (var name in settings) {
+            payload.settings[name] = (settings[name] === 'yes');
+        }
+        Ext.Ajax.request({
+            url: me.getApiUrl('backend/api.php?action=set'),
+            method: 'POST',
+            jsonData: payload,
+            headers: { 'Content-Type': 'application/json' },
+            failure: function() {
+                console.warn('[Sync] Не удалось сохранить на сервер для vehid=' + vehid);
+            }
+        });
+    },
+
     importCsv: function() {
         var me = this;
         var input = document.createElement('input');
@@ -243,12 +304,41 @@ Ext.define('Store.sensor_dashboard.Module', {
             if (!file) return;
             var reader = new FileReader();
             reader.onload = function(evt) {
-                var content = evt.target.result;
-                me.processCsv(content);
+                me.processCsv(evt.target.result);
             };
             reader.readAsText(file, 'UTF-8');
         };
         input.click();
+    },
+
+    exportCsv: function() {
+        var me = this;
+        var fullStore = me.vehicleFullStore;
+        if (!fullStore) return;
+        var rows = [['гос.номер', 'АОГ', 'Видео', 'Табло', 'Голос', 'ТФ', 'BLE', 'ТХГ', 'ДУТ', 'Датчик t']];
+        fullStore.each(function(record) {
+            var vehid = record.get('vehid');
+            var name = record.get('name');
+            var storageKey = 'sensor_dashboard_' + vehid;
+            var saved = localStorage.getItem(storageKey);
+            var values = saved ? JSON.parse(saved) : {};
+            var row = [name];
+            var sensorOrder = ['aog', 'video', 'tablo', 'voice', 'tf', 'kpp', 'thg', 'dut', 'temp_sensor'];
+            Ext.each(sensorOrder, function(sensorName) {
+                row.push(values[sensorName] === 'yes' ? 'да' : 'нет');
+            });
+            rows.push(row);
+        });
+        var csvContent = rows.map(row => row.join(';')).join('\n');
+        var blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        var link = document.createElement('a');
+        var url = URL.createObjectURL(blob);
+        link.href = url;
+        link.setAttribute('download', 'sensor_settings.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     },
 
     processCsv: function(csvContent) {
@@ -259,7 +349,6 @@ Ext.define('Store.sensor_dashboard.Module', {
         if (lines.length === 0) return;
 
         var headers = lines[0].split(delimiter).map(function(h) { return h.trim().toLowerCase(); });
-
         var colMap = {};
         var missingCols = [];
         Ext.each(me.sensors, function(sensor) {
@@ -273,7 +362,6 @@ Ext.define('Store.sensor_dashboard.Module', {
                 }
             }
         });
-        // Колонка "гос.номер" обязательна (в ней хранится название ТС)
         var nameColName = 'гос.номер'.toLowerCase();
         if (headers.indexOf(nameColName) === -1) {
             Ext.Msg.alert('Ошибка', 'В CSV отсутствует обязательная колонка "гос.номер"');
@@ -299,11 +387,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             var vehicleName = parts[colMap[nameColName]].trim();
             if (vehicleName === '') continue;
 
-            // Поиск по названию ТС (name), а не по гос.номеру
             var foundRecord = null;
             me.vehicleFullStore.each(function(rec) {
-                var recName = rec.get('name');
-                if (recName && recName.toLowerCase() === vehicleName.toLowerCase()) {
+                if (rec.get('name').toLowerCase() === vehicleName.toLowerCase()) {
                     foundRecord = rec;
                     return false;
                 }
@@ -329,8 +415,9 @@ Ext.define('Store.sensor_dashboard.Module', {
             });
 
             localStorage.setItem(storageKey, JSON.stringify(values));
-            updated++;
             me.updateVehicleIcons(vehid);
+            me.syncToServer(vehid, values);
+            updated++;
         }
 
         Ext.Msg.alert('Импорт завершён', 'Обновлено ТС: ' + updated);
@@ -338,9 +425,7 @@ Ext.define('Store.sensor_dashboard.Module', {
         me.refreshDashboard();
         if (me.currentVehid) {
             var currentRecord = me.vehicleGridStore.findRecord('vehid', me.currentVehid);
-            if (currentRecord) {
-                me.loadConfigForVehicle(me.currentVehid, currentRecord.get('name'));
-            }
+            if (currentRecord) me.loadConfigForVehicle(me.currentVehid, currentRecord.get('name'));
         }
     },
 
@@ -598,9 +683,9 @@ Ext.define('Store.sensor_dashboard.Module', {
 
         var storageKey = 'sensor_dashboard_' + me.currentVehid;
         localStorage.setItem(storageKey, JSON.stringify(values));
-        Ext.Msg.alert('Сохранено', 'Настройки сохранены');
-
         me.updateVehicleIcons(me.currentVehid);
+        me.syncToServer(me.currentVehid, values);
+        Ext.Msg.alert('Сохранено', 'Настройки сохранены');
         me.applyVehicleFilters();
     },
 
