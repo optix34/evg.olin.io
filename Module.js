@@ -6,7 +6,7 @@ Ext.define('Store.sensor_dashboard.Module', {
     extend: 'Ext.Component',
 
     externalBackend: 'https://37.139.99.253:3001',
-    localBackend: 'http://192.168.0.139:3001',
+    localBackend: 'https://192.168.0.139:3001',
     backendUrl: null,
 
     sensors: [
